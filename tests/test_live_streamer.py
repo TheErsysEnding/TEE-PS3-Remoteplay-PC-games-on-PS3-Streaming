@@ -8,6 +8,7 @@ Safe on a live desktop: the picture comes from videotestsrc, nothing is captured
 
 import errno
 import os
+import pathlib
 import shutil
 import socket
 import struct
@@ -27,6 +28,7 @@ if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
 from teecellstream import childproc, encoders, log, protocol   # noqa: E402
+from teecellstream.capture_base import ScreenCapture   # noqa: E402
 from teecellstream import live_streamer as live_streamer_module   # noqa: E402
 from teecellstream.clock import now_us, sleep_until_us   # noqa: E402
 from teecellstream.live_streamer import LiveStreamer   # noqa: E402
@@ -45,7 +47,7 @@ HEADER = struct.Struct(">2sIHHBBQ")
 
 # ---------------------------------------------------------------- stand-in captures (mirror the SPEC feed() contract)
 
-class GstTestCapture:
+class GstTestCapture(ScreenCapture):
     """videotestsrc (ball) -> I420 frames on a pipe; a reader keeps the newest frame; feed() hands the newest
     frame to ffmpeg exactly every 1/fps s, unchanged frames included, until stop().
 
@@ -162,7 +164,7 @@ class HighMotionCapture(GstTestCapture):
         return True
 
 
-class FailingInputCapture:
+class FailingInputCapture(ScreenCapture):
     """A capture whose ffmpeg input does not exist: ffmpeg exits at once with no frames."""
 
     name = "broken"
@@ -183,7 +185,7 @@ class FailingInputCapture:
         pass
 
 
-class SilentCapture:
+class SilentCapture(ScreenCapture):
     """Comes up, then never delivers a frame (a capture backend that hangs). ffmpeg sits on its empty
     stdin and writes nothing, so only the first-frame watchdog can end this rung."""
 
@@ -579,7 +581,9 @@ class LiveStreamerTests(unittest.TestCase):
         self.assertIn("3-mal in Folge", self.failures[0])
         recent = log.get_recent()
         self.assertIn("live: versuche Encoder Kaputt (Test)", recent)
-        self.assertIn("live: the encoder produced no frames. ffmpeg said:", recent)
+        # the exit code is part of the line on purpose: a silent ffmpeg that simply stopped and one that
+        # printed a reason are different faults, and without the code the log cannot tell them apart
+        self.assertRegex(recent, r"live: the encoder produced no frames \(ffmpeg exit 254\)\. ffmpeg said:")
         self.assertIn("tee-cst-no-such-input", recent, "ffmpegs Fehlertext fehlt im Log")
         self.assertEqual(childproc.children(), [])
 
@@ -602,7 +606,7 @@ class LiveStreamerTests(unittest.TestCase):
         self.assertEqual(streamer._failed_starts, 0)
 
     def test_capture_that_will_not_start_trips_the_fuse_with_its_own_reason(self):
-        class NoCapture:
+        class NoCapture(ScreenCapture):
             name = "none"
             needs_scale = False
             captured_fps = 0
@@ -630,7 +634,10 @@ class LiveStreamerTests(unittest.TestCase):
         self.assertEqual(log.get_recent().count("live: versuche Encoder") - before, 3)
 
     def test_falls_back_to_the_next_encoder(self):
-        vaapi = encoders.LADDER[1]
+        # by NAME, not by position: this used to be LADDER[1], and the moment AMD's AMF rung was added
+        # above VA-API the test started describing a rung that CAN sweep - while still asserting the
+        # SINFO flag of one that cannot. What it is about is the rung without intra refresh.
+        vaapi = next(e for e in encoders.LADDER if e.kind == "vaapi")
         if vaapi in self.available:
             self.skipTest("VA-API funktioniert hier, kein natürlicher Fehlschlag")
         streamer = self._make([vaapi, self.best])
@@ -885,6 +892,77 @@ class LiveStreamerTests(unittest.TestCase):
         self.assertEqual(streamer._failed_starts, 0)
         self.assertEqual(self.failures, [])
         self.assertRegex(log.get_recent(), r"live: \d+ frames sent")
+
+
+class BusySourceRetryTests(unittest.TestCase):
+    """A screen source that produced nothing because it was BUSY gets another try; one that is simply
+    broken does not. Windows needs this: Desktop Duplication says "access denied" for up to ~0.9 s after
+    the desktop changed resolution, and the first PS3 connection to the Windows server landed in exactly
+    that gap - the mode switch and the capture start were 4 ms apart, so the stream never began."""
+
+    def setUp(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.streamer = LiveStreamer(self.sock, FFMPEG, FPS, protocol.KBPS, W, H, protocol.SEND_RATE_KBPS,
+                                     GstTestCapture, lambda: [], lambda: "intra", lambda why: None)
+        self.session = live_streamer_module._Session(("127.0.0.1", 1), True, W, H)
+        self.wait = live_streamer_module.BUSY_SOURCE_WAIT_S
+        live_streamer_module.BUSY_SOURCE_WAIT_S = 0.0
+        self.attempts = 0
+
+    def tearDown(self):
+        live_streamer_module.BUSY_SOURCE_WAIT_S = self.wait
+        self.sock.close()
+
+    def _pump(self, busy_for: int, encoder=None):
+        """Stands in for a rung: fails `busy_for` times with a busy source, then delivers."""
+        def pump(session, _encoder):
+            self.attempts += 1
+            session.source_was_busy = self.attempts <= busy_for
+            return False if self.attempts <= busy_for else True
+        self.streamer._pump_encoder = pump
+        return self.streamer._pump_with_retry(self.session, encoder or _FakeEncoder())
+
+    def test_a_busy_source_is_tried_again_and_then_works(self):
+        self.assertTrue(self._pump(busy_for=1))
+        self.assertEqual(2, self.attempts)
+
+    def test_it_gives_up_after_the_agreed_number_of_tries(self):
+        self.assertFalse(self._pump(busy_for=99))
+        self.assertEqual(1 + live_streamer_module.BUSY_SOURCE_RETRIES, self.attempts)
+
+    def test_a_source_that_is_merely_broken_is_not_retried(self):
+        """Otherwise a wrong setting costs three ffmpeg starts before it says so."""
+        def pump(session, _encoder):
+            self.attempts += 1
+            session.source_was_busy = False
+            return False
+        self.streamer._pump_encoder = pump
+        self.assertFalse(self.streamer._pump_with_retry(self.session, _FakeEncoder()))
+        self.assertEqual(1, self.attempts)
+
+    def test_a_stop_while_waiting_ends_it(self):
+        def pump(session, _encoder):
+            self.attempts += 1
+            session.source_was_busy = True
+            session.active = False      # the PS3 said STOP between the tries
+            return False
+        self.streamer._pump_encoder = pump
+        self.assertFalse(self.streamer._pump_with_retry(self.session, _FakeEncoder()))
+        self.assertEqual(1, self.attempts)
+
+    def test_the_flag_never_survives_into_the_next_attempt(self):
+        """_pump_encoder clears it first thing; a stale True would retry a rung that failed for good."""
+        source = pathlib.Path(live_streamer_module.__file__).read_text()
+        head = source.split("def _pump_encoder", 1)[1].split("\n", 2)[1]
+        self.assertIn("source_was_busy = False", head)
+
+    def test_the_plain_contract_calls_nothing_transient(self):
+        from teecellstream.capture_base import ScreenCapture
+        self.assertFalse(ScreenCapture().transient_failure("Desktop duplication access denied"))
+
+
+class _FakeEncoder:
+    name = "test-encoder"
 
 
 class AnnouncedLevel(unittest.TestCase):

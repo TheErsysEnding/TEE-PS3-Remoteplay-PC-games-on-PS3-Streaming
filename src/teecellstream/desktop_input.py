@@ -35,20 +35,10 @@ from .virtual_gamepad import EV_KEY, node_path, open_uinput
 from .i18n import _
 
 # the sticks rest slightly off centre once a pad has some age on it (the PS3's reads -6 at rest), and
-# without a dead zone that drifts the pointer across the screen on its own
-STICK_DEAD_ZONE = 16
-
-# pointer and scroll speeds are per SECOND, not per packet: the pad's send rate can vary, so moving by
-# elapsed time keeps the speed steady and the motion smooth however the packets are spaced. the stick
-# reads up to ~112 once the dead zone is off it. full tilt crosses the screen in ~1.8s; tune these two.
-STICK_FULL_TILT = 112.0
-POINTER_PIXELS_PER_SECOND_AT_FULL_TILT = 880.0
-SCROLL_NOTCHES_PER_SECOND_AT_FULL_TILT = 42.0
-
-POINTER_SPEED = POINTER_PIXELS_PER_SECOND_AT_FULL_TILT / (STICK_FULL_TILT * STICK_FULL_TILT)
-SCROLL_SPEED = SCROLL_NOTCHES_PER_SECOND_AT_FULL_TILT / STICK_FULL_TILT
-WHEEL_NOTCH_HI_RES = 120     # one detent, as REL_WHEEL_HI_RES counts them (same unit Windows used)
-MAX_ELAPSED_S = 0.05         # a gap between packets (or the first one) must not lurch the pointer
+# the pointer curve now lives in stick.py, so Windows can use exactly the same one
+from .stick import (MAX_ELAPSED_S, POINTER_DEAD_ZONE as STICK_DEAD_ZONE,      # noqa: F401
+                    POINTER_FULL_TILT as STICK_FULL_TILT, POINTER_SPEED, SCROLL_SPEED,
+                    WHEEL_NOTCH_HI_RES, apply_pointer_dead_zone as apply_dead_zone)
 
 # event codes from linux/input-event-codes.h (EV_KEY comes from virtual_gamepad)
 EV_REL = 0x02
@@ -666,7 +656,3 @@ class DesktopInput:
             log.write(_("pad: mouse and keyboard (uinput) removed"))
 
 
-def apply_dead_zone(value: int) -> int:
-    if -STICK_DEAD_ZONE < value < STICK_DEAD_ZONE:
-        return 0
-    return value - STICK_DEAD_ZONE if value > 0 else value + STICK_DEAD_ZONE

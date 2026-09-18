@@ -32,10 +32,16 @@ PR_SET_PDEATHSIG = 1
 SPAWN_TIMEOUT_S = 10.0       # a fork never takes this long; only hit if the spawner is wedged during shutdown
 REAP_TIMEOUT_S = 1.0
 
-_libc = ctypes.CDLL(None, use_errno=True)
-_prctl = _libc.prctl
-_prctl.argtypes = (ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong)
-_prctl.restype = ctypes.c_int
+# prctl(PR_SET_PDEATHSIG) is how a child is told to die with its parent, and it is Linux's alone.
+# ctypes.CDLL(None) means "the main program" on Unix; on Windows it raises, which is what made the whole
+# server fail to import there. Windows gets the safety net it can have instead: kill_all() at exit, plus
+# ffmpeg noticing its pipe has closed.
+_prctl = None
+if sys.platform != "win32":
+    _libc = ctypes.CDLL(None, use_errno=True)
+    _prctl = _libc.prctl
+    _prctl.argtypes = (ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong)
+    _prctl.restype = ctypes.c_int
 
 _OUR_PID = os.getpid()
 _gate = threading.Lock()
@@ -44,6 +50,8 @@ _children: list[subprocess.Popen] = []
 
 def _die_with_parent() -> None:
     """Runs in the child between fork and exec. Keep it tiny: only async-signal-safe-ish work here."""
+    if _prctl is None:
+        return              # Windows: there is no fork, and preexec_fn is never called there anyway
     _prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)
     # the parent may have died in the gap between fork and prctl - the signal would then never come.
     # getppid still reporting us means it is alive; anything else (init, a subreaper) means it is not.
@@ -132,14 +140,20 @@ _spawner = _Spawner()
 def popen(args, **kw) -> subprocess.Popen:
     """subprocess.Popen, but the child dies with us and is remembered for kill_all()."""
     kw.setdefault("stdin", subprocess.DEVNULL)
-    caller_preexec = kw.get("preexec_fn")
-    if caller_preexec is None:
-        kw["preexec_fn"] = _die_with_parent
+    if sys.platform == "win32":
+        # Popen REFUSES preexec_fn on Windows - it is not "ignored", it raises. There is no fork to run
+        # anything between, either. What stands in for it there: kill_all() at exit, and ffmpeg ending by
+        # itself when the pipe it writes to closes.
+        kw.pop("preexec_fn", None)
     else:
-        def chained():
-            _die_with_parent()
-            caller_preexec()
-        kw["preexec_fn"] = chained
+        caller_preexec = kw.get("preexec_fn")
+        if caller_preexec is None:
+            kw["preexec_fn"] = _die_with_parent
+        else:
+            def chained():
+                _die_with_parent()
+                caller_preexec()
+            kw["preexec_fn"] = chained
 
     process = _spawner.spawn(args, kw)
     with _gate:

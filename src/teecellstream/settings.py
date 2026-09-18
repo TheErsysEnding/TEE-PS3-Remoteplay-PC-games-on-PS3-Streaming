@@ -20,6 +20,9 @@ DEFAULTS = {
     "custom_commands": None,               # list of 4 {"kind","value","label"}; None = not yet seeded
     "screencast_restore_token": None,      # xdg-desktop-portal token so the share dialog is asked once
     "hide_notice_shown": False,            # "still running in the background" notification shown once
+    "ffmpeg_path": "",                     # "" = look for one (see ffmpeg_find); a path overrides the search
+    "language": "en",                      # "en" | "de"; the window writes it, the app reads it at start
+    "theme": "system",                     # Windows window only: "system" | "light" | "dark"
 }
 
 

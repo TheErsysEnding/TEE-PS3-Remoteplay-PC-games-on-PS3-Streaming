@@ -1,3 +1,17 @@
+tee-cell-stream-server (1:1.0.1) unstable; urgency=medium
+
+  * Windows-Server: eigene Fassung mit Fenster (Qt, Windows-11-Stil, Dark
+    Mode, Deutsch/Englisch), Installer mit ffmpeg und ViGEmBus-Treiber.
+  * AMD-Grafik als Encoder (AMF) - halbiert auf dem Testrechner die Datenmenge
+    bei gleicher Bildrate.
+  * Unterstuetzungslinks in beiden Fenstern, im Ueber-Dialog und in der PKG.
+  * Behoben: die Aufraeum-Ueberwachung raeumte einen gerade startenden Stream
+    wieder ab, wenn das Umschalten der Aufloesung laenger dauerte.
+  * PKG 1.0.1: zwei QR-Codes auf dem Wartebildschirm (Server und Spende),
+    Adresse des umbenannten Repositorys.
+
+ -- TEE <github@teebug.de>  Fri, 18 Sep 2026 23:09:17 +0200
+
 tee-cell-stream-server (1:1.0.0) unstable; urgency=medium
 
   * Erste oeffentliche Fassung: V1.0.0. Server fuer Linux und die PKG fuer

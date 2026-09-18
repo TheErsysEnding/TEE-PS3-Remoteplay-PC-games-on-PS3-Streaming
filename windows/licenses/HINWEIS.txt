@@ -1,0 +1,43 @@
+﻿TEE PS3 Remoteplay 1.0.0 - was gerade installiert wurde
+
+Der Server streamt deinen PC-Bildschirm an eine PlayStation 3 und nimmt von dort
+Controller, Maus und Tastatur entgegen.
+
+Gestartet wird er ueber das Startmenue. Es oeffnet sich ein Konsolenfenster - das
+ist der Server; solange es offen ist, findet die PS3 ihn im Netzwerk. Schliessen
+beendet ihn.
+
+  Einstellungen:   %APPDATA%\TEE PS3 Remoteplay\settings.json
+  Protokoll:       %LOCALAPPDATA%\TEE PS3 Remoteplay\server.log
+
+Mitinstalliert wurde ausserdem:
+
+  ffmpeg 9.0.1      liegt neben dem Programm und wird nur von ihm benutzt.
+                    Es wurde nichts an deinem PATH oder an anderen Programmen geaendert.
+
+  ViGEmBus 1.22.0   der Treiber fuer den virtuellen Xbox-Controller. Ohne ihn kann
+                    der PS3-Controller keine Spiele steuern. War er schon vorhanden,
+                    wurde er nicht angefasst. Beim Deinstallieren bleibt er stehen,
+                    weil andere Programme (DS4Windows, Parsec, Steam) ihn ebenfalls
+                    benutzen.
+
+  Firewall          eine Ausnahme fuer UDP 38310, damit die PS3 antworten kann.
+                    Sie wird beim Deinstallieren wieder entfernt.
+
+Lizenzen
+--------
+
+Dieses Programm steht unter der Apache License 2.0 (licenses\LICENSE-TEE.txt).
+
+Das mitgelieferte ffmpeg.exe stammt aus einem Bau von gyan.dev und steht unter der
+GNU General Public License v3 (licenses\LICENSE-ffmpeg.txt). Es ist ein eigenes,
+unveraendertes Programm, das hier lediglich als eigener Prozess gestartet wird.
+Den Quellcode und die genaue Bauanleitung gibt es unter:
+
+    https://www.gyan.dev/ffmpeg/builds/
+    https://github.com/FFmpeg/FFmpeg
+
+Die Einzelheiten zu diesem Bau stehen in licenses\README-ffmpeg.txt.
+
+ViGEmBus stammt von Nefarius Software Solutions und steht unter der BSD-3-Clause-
+Lizenz: https://github.com/nefarius/ViGEmBus

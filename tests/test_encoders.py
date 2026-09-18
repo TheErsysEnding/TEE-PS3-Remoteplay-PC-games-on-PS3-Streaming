@@ -25,7 +25,7 @@ from teecellstream.settings import Settings   # noqa: E402
 FFMPEG = shutil.which("ffmpeg")
 FF = FFMPEG or "ffmpeg"
 
-NVENC, VAAPI, X264 = encoders.LADDER
+NVENC, AMF, VAAPI, X264 = encoders.LADDER
 RAW_INPUT = ["-probesize", "32", "-analyzeduration", "0", "-f", "rawvideo", "-pix_fmt", "yuv420p",
              "-video_size", "1280x720", "-framerate", "60", "-i", "pipe:0"]
 X11_INPUT = ["-f", "x11grab", "-framerate", "60", "-draw_mouse", "1", "-i", ":0"]
@@ -189,21 +189,27 @@ def _access_units(stream):
 
 class LadderTests(unittest.TestCase):
     def test_ladder_order_kinds_and_names(self):
-        self.assertEqual([e.kind for e in encoders.LADDER], ["nvenc", "vaapi", "x264"])
+        self.assertEqual([e.kind for e in encoders.LADDER], ["nvenc", "amf", "vaapi", "x264"])
         self.assertEqual([e.name for e in encoders.LADDER],
-                         ["NVIDIA GPU (NVENC)", "Intel/AMD GPU (VA-API)", "CPU (x264 – fewer fps possible)"])
-        self.assertEqual([e.supports_intra_refresh for e in encoders.LADDER], [True, False, True])
+                         ["NVIDIA GPU (NVENC)", "AMD GPU (AMF)", "Intel/AMD GPU (VA-API)",
+                          "CPU (x264 – fewer fps possible)"])
+        # AMF is the only hardware rung besides nvenc that can sweep: it has -intra_refresh_mb, and
+        # VA-API (the same silicon on Linux) has nothing of the kind in ffmpeg's wrapper
+        self.assertEqual([e.supports_intra_refresh for e in encoders.LADDER], [True, True, False, True])
         self.assertEqual(str(X264), X264.name)   # what a dropdown shows
 
     def test_probe_arguments(self):
         source = ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=320x240:d=0.1", "-frames:v", "1"]
         self.assertEqual(NVENC.probe_args, source + ["-c:v", "h264_nvenc", "-f", "null", "-"])
         self.assertEqual(X264.probe_args, source + ["-c:v", "libx264", "-f", "null", "-"])
+        self.assertEqual(AMF.probe_args, source + ["-c:v", "h264_amf", "-f", "null", "-"])
         self.assertEqual(VAAPI.probe_args,
                          ["-hide_banner", "-loglevel", "error", "-vaapi_device", "/dev/dri/renderD128"] + source[3:]
                          + ["-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-f", "null", "-"])
 
     def test_intra_refresh_enabled(self):
+        self.assertTrue(encoders.intra_refresh_enabled(AMF, "intra"))
+        self.assertFalse(encoders.intra_refresh_enabled(AMF, "keyframe"))
         self.assertTrue(encoders.intra_refresh_enabled(NVENC, "intra"))
         self.assertTrue(encoders.intra_refresh_enabled(X264, "intra"))
         self.assertFalse(encoders.intra_refresh_enabled(VAAPI, "intra"))     # VA-API cannot, whatever the setting
@@ -370,8 +376,10 @@ class ArgumentTests(unittest.TestCase):
             self.assertIn("slices=1", args[args.index("-x264-params") + 1])
 
     def test_unknown_kind_is_refused(self):
+        # This test used to name "amf" as its example of a kind that does not exist - AMD's encoder was
+        # the obvious thing nobody had built yet. It exists now, so the placeholder had to move on.
         with self.assertRaises(ValueError):
-            _build(encoders.VideoEncoder("amf", "AMD (Windows only)", [], True), "intra")
+            _build(encoders.VideoEncoder("videotoaster", "Video Toaster (1987)", [], True), "intra")
 
 
 @unittest.skipUnless(FFMPEG, "ffmpeg fehlt")
@@ -643,3 +651,146 @@ class RateControl(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AmfTests(unittest.TestCase):
+    """AMD's own encoder - the rung that made Full HD possible on the weak test PC.
+
+    Measured there (Radeon 780M, driver 32.0.11021.1011, ffmpeg 9.0.1, desktop at 1920x1080, ddagrab,
+    ten seconds of a moving window, CAVLC, intra refresh, 12 Mbit/s asked for):
+
+        x264 on the CPU   600 pictures = 60 fps,  11.4 Mbit/s
+        h264_amf          600 pictures = 60 fps,   5.0 Mbit/s
+
+    The same cadence for less than half the data - and the data was what the console choked on: at
+    43 KB per picture it needed 34 fragments each and gave up after three pictures.
+    """
+
+    def _args(self, **kwargs):
+        options = dict(loss_recovery="intra", entropy_coder="cavlc", rate_control="vbr",
+                       width=1920, height=1080, fps=60, kbps=12000)
+        options.update(kwargs)
+        return encoders.build_ffmpeg_args(FF, AMF, RAW_INPUT, options["width"], options["height"],
+                                          options["fps"], options["kbps"], options["loss_recovery"],
+                                          False, options["entropy_coder"], options["rate_control"])
+
+    def _value(self, args, flag):
+        return args[args.index(flag) + 1]
+
+    def test_the_latency_options_are_all_there(self):
+        """Four knobs, and async_depth is the one that would otherwise cost sixteen pictures: it defaults
+        to 16 in ffmpeg's AMF wrapper, in a program whose whole budget is 25 ms."""
+        args = self._args()
+        self.assertEqual("ultralowlatency", self._value(args, "-usage"))
+        self.assertEqual("speed", self._value(args, "-quality"))
+        self.assertEqual("1", self._value(args, "-latency"))
+        self.assertEqual("1", self._value(args, "-async_depth"))
+        self.assertEqual("0", self._value(args, "-preanalysis"))
+        self.assertEqual("0", self._value(args, "-frame_skipping"),
+                         "frame skipping lets the encoder drop a picture the PS3 is waiting for")
+
+    def test_the_profile_and_level_are_what_the_ps3_decodes(self):
+        args = self._args()
+        self.assertEqual("constrained_baseline", self._value(args, "-profile"))
+        self.assertEqual("42", self._value(args, "-level"))
+
+    def test_the_entropy_coder_is_passed_on(self):
+        """AMF defaults to "auto", and auto is CABAC - the one thing the console cannot decode in time."""
+        for coder in ("cavlc", "cabac"):
+            with self.subTest(coder=coder):
+                self.assertEqual(coder, self._value(self._args(entropy_coder=coder), "-coder"))
+
+    def test_the_sweep_is_expressed_in_macroblocks(self):
+        """x264 and nvenc take the sweep LENGTH as -g and work the strip out themselves; AMF wants the
+        strip. Same sweep, other end of the same arithmetic."""
+        self.assertEqual(136, self._value(self._args(), "-intra_refresh_mb") and
+                         int(self._value(self._args(), "-intra_refresh_mb")))
+        self.assertEqual(60, int(self._value(self._args(width=1280, height=720), "-intra_refresh_mb")))
+        # 1920x1080 = 120 x 68 macroblocks = 8160, over one second at 60 pictures = 136 each
+        self.assertEqual(136, -(-(120 * 68) // 60))
+
+    def test_the_sweep_closes_at_every_size_and_rate(self):
+        """A strip that is one macroblock too small leaves a stripe that is never refreshed, and a lost
+        packet stays on the screen for ever. Rounding therefore goes UP, always."""
+        for width, height in protocol.STREAM_SIZES:
+            for fps in (30, 60, 120, 240):
+                with self.subTest(size=(width, height), fps=fps):
+                    per_picture = encoders._intra_refresh_mbs(width, height, fps)
+                    total = ((width + 15) // 16) * ((height + 15) // 16)
+                    pictures = max(1, round(protocol.REFRESH_SWEEP_SECONDS * fps))
+                    self.assertGreaterEqual(per_picture * pictures, total,
+                                            "the sweep never closes: %d of %d macroblocks"
+                                            % (per_picture * pictures, total))
+                    self.assertGreaterEqual(per_picture, 1)
+
+    def test_no_sweep_in_keyframe_mode(self):
+        args = self._args(loss_recovery="keyframe")
+        self.assertNotIn("-intra_refresh_mb", args)
+        self.assertEqual("30", self._value(args, "-g"))     # KEYFRAME_INTERVAL_SECONDS at 60 fps
+
+    def test_the_three_rate_controls_map_to_amfs_own_names(self):
+        self.assertEqual("cbr", self._value(self._args(rate_control="cbr"), "-rc"))
+        self.assertEqual("vbr_latency", self._value(self._args(rate_control="vbr"), "-rc"))
+        # AMF has no CRF, and the mode that LOOKS like the equivalent - qvbr, a quality level on the
+        # same 0-51 scale - is the one the test machine refuses to start: "encoder->Init() failed with
+        # error 1", with and without a bitrate. Constant quality is therefore constant QP here.
+        quality = self._args(rate_control="quality")
+        self.assertEqual("cqp", self._value(quality, "-rc"))
+        self.assertEqual(str(protocol.QUALITY_CRF), self._value(quality, "-qp_i"))
+        self.assertEqual(str(protocol.QUALITY_CRF), self._value(quality, "-qp_p"))
+        self.assertNotIn("-crf", quality, "AMF would reject x264's -crf")
+        self.assertNotIn("-qvbr_quality_level", quality, "this hardware will not start qvbr at all")
+
+    def test_the_modes_this_hardware_refuses_are_never_built(self):
+        """Measured, not assumed: qvbr and hqvbr both fail with encoder->Init() error 1 on the Radeon
+        780M. A setting that maps onto one of them would take the encoder rung down with it."""
+        for rate_control in ("vbr", "quality", "cbr", "nonsense"):
+            with self.subTest(rate_control=rate_control):
+                chosen = self._value(self._args(rate_control=rate_control), "-rc")
+                self.assertIn(chosen, ("cqp", "cbr", "vbr_latency", "vbr_peak"))
+
+    def test_one_picture_can_never_outgrow_the_consoles_limit(self):
+        """AMF is the only rung that can be given a hard per-picture ceiling instead of a VBV window,
+        and the PS3 drops a picture over its own limit outright - so it is set on every mode."""
+        for rate_control in ("vbr", "quality", "cbr"):
+            with self.subTest(rate_control=rate_control):
+                args = self._args(rate_control=rate_control)
+                self.assertEqual(str(protocol.MAX_VBV_KBIT * 1000), self._value(args, "-max_au_size"))
+
+    def test_constant_bitrate_really_pins_the_rate(self):
+        args = self._args(rate_control="cbr", kbps=8000)
+        for flag in ("-b:v", "-maxrate", "-minrate"):
+            self.assertEqual("8000k", self._value(args, flag))
+
+    def test_the_picture_never_outgrows_what_the_ps3_accepts(self):
+        """The VBV window doubles as the largest a single picture may get, and the console drops one over
+        its per-frame limit - the same cap the other rungs get."""
+        for kbps in protocol.BITRATE_CHOICES_KBPS:
+            with self.subTest(kbps=kbps):
+                bufsize = self._value(self._args(kbps=kbps), "-bufsize")
+                self.assertLessEqual(int(bufsize.rstrip("k")), protocol.MAX_VBV_KBIT)
+
+    def test_no_b_frames(self):
+        self.assertEqual("0", self._value(self._args(), "-bf"))
+
+    def test_the_colour_tags_match_the_consoles_shader(self):
+        args = self._args()
+        self.assertEqual("tv", self._value(args, "-color_range"))
+        self.assertEqual("bt709", self._value(args, "-colorspace"))
+
+    def test_a_ddagrab_chain_is_not_scaled_a_second_time(self):
+        """ddagrab is a filter and scales inside its own chain, so needs_scale is False there - a -vf on
+        top would be a second scale of an already scaled picture."""
+        args = encoders.build_ffmpeg_args(FF, AMF, ["-filter_complex", "ddagrab=output_idx=0"],
+                                          1920, 1080, 60, 12000, "intra", False, "cavlc", "vbr")
+        self.assertNotIn("-vf", args)
+
+    def test_x11grab_style_input_is_scaled_on_the_way_in(self):
+        args = encoders.build_ffmpeg_args(FF, AMF, ["-i", ":0"], 1280, 720, 60, 6000, "intra", True,
+                                          "cavlc", "vbr")
+        self.assertIn("-vf", args)
+        filters = self._value(args, "-vf")
+        self.assertIn("scale=1280:720", filters)
+        self.assertIn("out_color_matrix=bt709", filters)   # the console's shader is BT.709, limited
+        self.assertIn("out_range=tv", filters)
+        self.assertTrue(filters.endswith("format=nv12"), filters)

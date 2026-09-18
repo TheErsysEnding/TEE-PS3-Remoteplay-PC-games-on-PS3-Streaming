@@ -20,6 +20,7 @@ import threading
 import time
 
 from . import log, portal, protocol
+from .capture_base import ScreenCapture as _ScreenCapture
 from .settings import settings
 from .i18n import _
 
@@ -119,32 +120,10 @@ def _grow_pipe(fd: int) -> None:
         pass   # over the limit or not a pipe: the default size works, just with more wake-ups
 
 
-class ScreenCapture:
-    """What every backend offers LiveStreamer. The base itself captures nothing."""
-
-    name = "none"
-    needs_scale = False        # True when ffmpeg must scale the input itself (x11grab delivers the full desktop)
-
-    def __init__(self):
-        self.captured_fps = 0  # frames the source delivered in the last second (statistics only)
-
-    def start(self, width: int, height: int, fps: float) -> bool:
-        return False
-
-    @classmethod
-    def unavailable_reason(cls) -> str:
-        """Empty while this backend could run here; otherwise the one thing that stops it. Asked before a
-        backend is picked, so an impossible one never becomes the source of a stream that then fails."""
-        return ""
-
-    def ffmpeg_input_args(self) -> list[str]:
-        return []
-
-    def feed(self, ffmpeg_stdin) -> None:
-        """Blocks until stop(); raw-pipe backends write frames to ffmpeg_stdin here."""
-
-    def stop(self) -> None:
-        pass
+# The contract every backend implements now lives in capture_base, because the Windows backends need the
+# same one and this module cannot be imported there (fcntl, PipeWire). Re-exported so that
+# capture.ScreenCapture keeps working for everything that already refers to it.
+ScreenCapture = _ScreenCapture
 
 
 # BGRA -> I420, either on the CPU or on the GPU.

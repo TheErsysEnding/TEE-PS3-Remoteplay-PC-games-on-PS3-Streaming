@@ -15,7 +15,10 @@ gi.require_version("Gdk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import APP_EXEC, APP_NAME, UPSTREAM_VERSION, __version__, autostart, custom_commands, display_mode, log, protocol  # noqa: E402
+from . import (APP_EXEC, APP_NAME, DONATE_HEADLINE, DONATE_PITCH, LINK_DONATE, LINK_GITHUB,  # noqa: E402
+               LINK_HUB, DONATE_PITCH_SHORT, UPSTREAM_VERSION, URL_DONATE, URL_GITHUB, URL_HUB,
+               __version__,
+               autostart, custom_commands, display_mode, log, protocol)
 from .i18n import _, add_translations, language, set_language, on_language_changed, off_language_changed  # noqa: E402
 from .settings import settings  # noqa: E402
 
@@ -25,276 +28,14 @@ WINDOW_WIDTH = 640
 WINDOW_HEIGHT = 600
 NARROW_BREAKPOINT = "max-width: 500sp"
 
-# The German half of this window. English is what stands in the code above and below; a string missing from
-# here simply stays English, which is the point of keeping English as the source language.
-LANGUAGE_LABELS = ("English", "Deutsch")
-LANGUAGE_CODES = ("en", "de")
-
-add_translations({
-    " (recommended)": " (empfohlen)",
-    "The PS3 decodes CAVLC about 43 % faster – measured 22 ms instead of 36–40 ms at 720p":
-        "Die PS3 decodiert CAVLC rund 43 % schneller – gemessen 22 ms statt 36–40 ms bei 720p",
-    "CABAC is slightly sharper per bit, but costs the PS3 considerably more decode time":
-        "CABAC ist etwas schärfer pro Bit, kostet die PS3 aber deutlich mehr Decodezeit",
-    "The lightest picture – the most decode time left over, at the cost of readable text":
-        "Das leichteste Bild – es bleibt die meiste Decodezeit übrig, dafür wird Text unschärfer",
-    " (a hair above – try it if the console runs fast)": " (einen Hauch darüber – testen, falls die Konsole schneller läuft)",
-    "A good place to start – measured 22 ms decode on the PS3":
-        "Empfohlen für den Einstieg – gemessen 22 ms Decode auf der PS3",
-    "A little sharper, about 1.2× the decode load": "Etwas schärfer, rund 1,2× Decodelast",
-    "Noticeably sharper, about 1.4× the decode load": "Deutlich schärfer, rund 1,4× Decodelast",
-    "About 2× the decode load – a good middle ground": "Rund 2× Decodelast – ein guter Mittelweg",
-    "Full HD, about 2.3× the decode load – measured 38–44 ms with x264":
-        "Volles HD, rund 2,3× Decodelast – gemessen 38–44 ms mit x264",
-    "the pointer and keyboard": "Zeiger und Tastatur",
-    "pad: unknown key from the console's keyboard (HID 0x%02X)":
-        "Pad: unbekannte Taste von der Tastatur an der Konsole (HID 0x%02X)",
-    "Leave it alone": "Nicht umschalten",
-    "Optimise for capture": "Für die Aufnahme optimieren",
-    "Same size & refresh rate": "Gleiche Größe & Bildwiederholrate",
-    "Same size only": "Nur gleiche Größe",
-    "The desktop stays as it is – the stream is scaled down from its native mode":
-        "Der Desktop bleibt, wie er ist – gestreamt wird vom nativen Modus herunterskaliert",
-    "The highest refresh rate the capture can use – the most pictures, but the stream is resized":
-        "Höchste Bildwiederholrate, die die Aufnahme nutzen kann – die meisten Bilder, aber der Stream wird umgerechnet",
-    "Default: the stream's size at a whole multiple of its rate – nothing resampled, nothing beating":
-        "Standard: Größe des Streams, Rate ein ganzes Vielfaches davon – nichts wird umgerechnet, nichts schwebt",
-    "The stream's size at the fastest rate the screen has for it – sharp, but not locked in step":
-        "Größe des Streams, dazu die schnellste Rate, die der Bildschirm dafür hat – scharf, aber nicht im Takt",
-    "1 (default)": "1 (Standard)",
-    "One picture in one piece – how everything so far was measured":
-        "Ein Bild am Stück – so wurde alles bisher gemessen",
-    "Experiment: two strips per picture. x264 only. Costs a little bitrate, as nothing is predicted across the edge":
-        "Versuch: zwei Streifen je Bild. Nur x264. Kostet etwas Bitrate, weil über die Kante nicht vorhergesagt wird",
-    "Experiment: four strips per picture – as many as the decoder has SPUs. x264 only":
-        "Versuch: vier Streifen je Bild – so viele, wie der Decoder SPUs hat. Nur x264",
-    "Variable": "Variabel",
-    "Constant quality": "Konstante Qualität",
-    "Constant bitrate": "Konstante Bitrate",
-    "Bitrate only when something moves – the original setting":
-        "Bitrate nur, wenn sich etwas bewegt – die ursprüngliche Einstellung",
-    "Default: measured the lowest latency (29 ms), and text stays sharp on an idle desktop":
-        "Standard: gemessen die niedrigste Latenz (29 ms), und Text bleibt auch im Leerlauf scharf",
-    "Holds the rate exactly and pads with filler when it has to, which the server throws away again":
-        "Hält die Rate genau und füllt notfalls mit Leerdaten auf, die der Server wieder wegwirft",
-    "Default: repairs the picture continuously, with no bitrate spikes":
-        "Standard: repariert das Bild laufend, ohne Bitratenspitzen",
-    "Whole keyframes once a second – in case NVENC accumulates artefacts over time":
-        "Ganze Schlüsselbilder im Sekundentakt – falls NVENC über die Zeit Artefakte zeigt",
-    "None": "Keine",
-    "Run a command or URI": "Befehl oder URI ausführen",
-    " – above the cadence, pictures are being discarded": " – über dem Takt, Bilder werden verworfen",
-    " – below the cadence, pictures are being held": " – unter dem Takt, Bilder werden gehalten",
-    " – on the cadence": " – im Takt",
-    " · source %d/s%s": " · Quelle %d/s%s",
-    "Stopped": "Gestoppt",
-    "Waiting for a PS3 …": "Warte auf eine PS3 …",
-    "PS3 connected: ": "PS3 verbunden: ",
-    "Closing the window leaves the server running in the background. Quit from the tray icon or the menu.":
-        "Schließen des Fensters lässt den Server im Hintergrund weiterlaufen. "
-        "Beenden über das Tray-Symbol oder das Menü.",
-    "On the PS3, SELECT + Triangle / Circle / L1 / R1 fires commands 1 to 4. It only sends the "
-    "number – what happens is set here: a URI such as steam://open/bigpicture (xdg-open) "
-    "or a command line (sh -c). So a device on the network can never start anything you have not "
-    "entered here.":
-        "Die PS3 löst mit SELECT + Dreieck / Kreis / L1 / R1 die Befehle 1 bis 4 aus. Sie schickt nur die "
-        "Nummer – was dann passiert, legst du hier fest: eine URI wie steam://open/bigpicture (xdg-open) "
-        "oder eine Befehlszeile (sh -c). Ein Gerät im Netz kann also nie etwas starten, das du nicht "
-        "hier eingetragen hast.",
-    "Log opened": "Log geöffnet",
-    "could not open the log: %s / %s": "konnte das Log nicht öffnen: %s / %s",
-    "Main menu": "Hauptmenü",
-    "Open the log": "Log öffnen",
-    "Autostart": "Autostart",
-    "Quit": "Beenden",
-    "About ": "Über ",
-    "Server": "Server",
-    "Commands": "Befehle",
-    "Video": "Video",
-    "Input": "Eingabe",
-    "System": "System",
-    "Log": "Protokoll",
-    "Encoder": "Encoder",
-    "Error correction": "Fehlerkorrektur",
-    "Resolution": "Auflösung",
-    _("Bitrate"): _("Bitrate"),
-    _("Entropy coder"): "Entropie-Codierung",
-    _("Rate control"): "Ratensteuerung",
-    "Slices per picture (experiment)": "Slices je Bild (Versuch)",
-    "The desktop while streaming": "Desktop während des Streams",
-    "Language": "Sprache",
-    "The interface switches over at once – no restart": "Die Oberfläche schaltet sofort um – kein Neustart",
-    "Stop": "Stopp",
-    "Start": "Start",
-    "Locked while a PS3 is streaming": "Gesperrt, solange eine PS3 streamt",
-    "No H.264 encoder found": "Kein H.264-Encoder gefunden",
-    "How the stream gets back to a clean picture after packet loss":
-        "Wie der Stream nach Paketverlust wieder ein sauberes Bild bekommt",
-    "Bigger means more readable text, but costs the PS3 roughly proportionally more decode time":
-        "Größer heißt lesbarer Text, kostet die PS3 aber ungefähr proportional mehr Decodezeit",
-    "Lower it when the picture judders on the PS3 – raise it only while it stays fluid":
-        "Niedriger, wenn das Bild auf der PS3 ruckelt – höher nur, solange es flüssig bleibt",
-    "The PS3 decodes CAVLC about 43 % faster – CABAC only while the picture stays fluid":
-        "Die PS3 decodiert CAVLC rund 43 % schneller – CABAC nur, solange das Bild flüssig bleibt",
-    "What the encoder spends its bitrate on – only the x264 encoder can do all three":
-        "Wofür der Encoder seine Bitrate ausgibt – nur der x264-Encoder kann alle drei",
-    "Swap the sticks in mouse mode": "Sticks im Maus-Modus tauschen",
-    "The right stick moves the pointer": "Rechter Stick bewegt den Zeiger",
-    "Start at login (minimised)": "Beim Anmelden starten (minimiert)",
-    "Creates an autostart entry": "Legt einen Autostart-Eintrag an",
-    "Ctrl+L": "Strg+L",
-    "stopped by you": "von dir gestoppt",
-    "encoders: end the stream first, then change the encoder":
-        "encoders: erst den Stream beenden, dann den Encoder wechseln",
-    "video: end the stream first, then change the error correction":
-        "video: erst den Stream beenden, dann die Fehlerkorrektur wechseln",
-    "video: end the stream first, then change the bitrate":
-        "video: erst den Stream beenden, dann die Bitrate wechseln",
-    "video: end the stream first, then change the resolution":
-        "video: erst den Stream beenden, dann die Auflösung wechseln",
-    "video: end the stream first, then change the entropy coder":
-        "video: erst den Stream beenden, dann die Entropie-Codierung wechseln",
-    "video: end the stream first, then change the rate control":
-        "video: erst den Stream beenden, dann die Ratensteuerung wechseln",
-    "video: end the stream first, then change the slice count":
-        "video: erst den Stream beenden, dann die Slice-Zahl wechseln",
-    "No, switch back": "Nein, zurückschalten",
-    "display: picture confirmed, the new resolution stays":
-        "display: Bild bestätigt, die neue Auflösung bleibt",
-    "The desktop was switched for the stream.\n\nIf you can read this, everything is fine. "
-    "With no answer it switches back to the previous resolution automatically in %d seconds.":
-        "Der Desktop wurde für den Stream umgeschaltet.\n\nWenn du das hier lesen kannst, ist alles in "
-        "Ordnung. Ohne Antwort wird in %d Sekunden automatisch auf die vorherige Auflösung zurückgeschaltet.",
-    "window: could not go to the background: %s": "Fenster: konnte nicht in den Hintergrund gehen: %s",
-    "command %d could not be saved: %s": "Befehl %d konnte nicht gespeichert werden: %s",
-    "Still running in the background": "Läuft im Hintergrund weiter",
-    "The server is still waiting for the PS3. Quit from the tray icon or the menu.":
-        "Der Server wartet weiter auf die PS3. Beenden über das Tray-Symbol oder das Menü.",
-})
+from .ui_text import (BITRATE_HINT, FPS_HINT, status_text, COMMANDS_INTRO, COMMAND_KINDS, COMMAND_KIND_LABELS, DISPLAY_HINTS, DISPLAY_LABELS, 
+                      ENTROPY_HINTS, ENTROPY_LABELS, HIDE_HINT, LANGUAGE_CODES, LANGUAGE_LABELS, 
+                      LOSS_RECOVERY_HINTS, LOSS_RECOVERY_KINDS, LOSS_RECOVERY_LABELS, RATE_HINTS, 
+                      RATE_LABELS, SIZE_HINT_BY_SIZE, SLICE_HINTS, SLICE_LABELS, SOURCE_BAND, 
+                      STATUS_CONNECTED, STATUS_STOPPED, STATUS_WAITING, bitrate_labels, fps_labels, 
+                      size_hints, size_labels, source_rate_text)  # noqa: E402  - siehe ui_text: beide Fenster, ein Wortlaut
 
 
-def fps_labels() -> tuple[str, ...]:
-    """Built on demand like bitrate_labels: the bracketed words are translated."""
-    smooth = _(" (even)")
-    hitch = _(" (slight hitch)")
-    exact = _(" (matches the TV exactly)")
-    probe = _(" (needs a smaller picture – measures the decoder)")
-    trial = _(" (a hair above – try it if the console runs fast)")
-
-    def note(f: float) -> str:
-        # 59.94 is the television's own rate, so every picture lands on exactly one refresh: no
-        # duplicate, no dropped one. Above 60 nothing more can be SHOWN at all - the extra pictures
-        # are decoded and then overwritten before the beam reaches them - so those are a measurement.
-        if abs(f - 59.94) < 0.005:
-            return exact
-        if abs(f - 59.95) < 0.005:
-            # the two are 0.01 apart, so this test has to be tighter than the gap - see fps_fraction,
-            # where the same band was wide enough to swallow 59.95 whole
-            return trial
-        if f > 60:
-            return probe
-        return smooth if f in (30, 60) else hitch
-
-    return tuple("%g fps%s" % (f, note(f)) for f in protocol.FPS_CHOICES)
-
-
-def bitrate_labels() -> tuple[str, ...]:
-    """Built on demand rather than at import: the word in brackets is translated, so the list has to be
-    rebuilt whenever the language changes."""
-    return tuple("%d Mbit/s%s" % (k // 1000, _(" (recommended)") if k == protocol.KBPS else "")
-                 for k in protocol.BITRATE_CHOICES_KBPS)
-# Short names for the dropdown, full explanations underneath it. GTK truncates a long selected value with
-# an ellipsis at any window size, so the sentence that explains a choice can never live inside the choice:
-# it goes into the row's subtitle, which the row rewrites whenever the selection changes.
-ENTROPY_LABELS = ("CAVLC", "CABAC")
-ENTROPY_HINTS = ("The PS3 decodes CAVLC about 43 % faster – measured 22 ms instead of 36–40 ms at 720p",
-                 "CABAC is slightly sharper per bit, but costs the PS3 considerably more decode time")
-
-def size_labels() -> tuple[str, ...]:
-    """Built from protocol.STREAM_SIZES rather than written out beside it.
-
-    It used to be a hardcoded tuple, and the moment a size was added to STREAM_SIZES without it the
-    dropdown kept its old entries while every index shifted by one - picking "1280 × 720" set
-    960 × 544. Two lists that must agree is one list too many."""
-    return tuple("%d × %d" % size for size in protocol.STREAM_SIZES)
-# Keyed by the size itself, not by position. As a flat tuple this had gone wrong exactly the way the
-# labels above had: 960 × 544 was added to STREAM_SIZES and the tuple stayed five long, so every
-# explanation slid up by one place and Full HD - the last entry - got none at all and simply kept
-# whichever sentence had been standing there before. A size with no entry here is now visible as a
-# short, honest line instead of somebody else's sentence.
-SIZE_HINT_BY_SIZE = {
-    (960, 544):   "The lightest picture – the most decode time left over, at the cost of readable text",
-    (1280, 720):  "A good place to start – measured 22 ms decode on the PS3",
-    (1408, 800):  "A little sharper, about 1.2× the decode load",
-    (1536, 864):  "Noticeably sharper, about 1.4× the decode load",
-    (1792, 1008): "About 2× the decode load – a good middle ground",
-    (1920, 1080): "Full HD, about 2.3× the decode load – measured 38–44 ms with x264",
-}
-
-
-def size_hints() -> tuple[str, ...]:
-    """One explanation per entry of STREAM_SIZES, in that order - see SIZE_HINT_BY_SIZE."""
-    return tuple(SIZE_HINT_BY_SIZE.get(size, "%d × %d" % size) for size in protocol.STREAM_SIZES)
-
-# The names say what each one DOES to the desktop, in the order DISPLAY_STRATEGIES lists them.
-# "Throttle to 60 Hz" was the old name of the third one and described only half of it: it also puts the
-# desktop at the stream's own size, and that half turned out to be the one that made the picture sharp.
-DISPLAY_LABELS = ("Leave it alone", "Optimise for capture", "Same size & refresh rate", "Same size only")
-DISPLAY_HINTS = ("The desktop stays as it is – the stream is scaled down from its native mode",
-                 "The highest refresh rate the capture can use – the most pictures, but the stream is resized",
-                 "Default: the stream's size at a whole multiple of its rate – nothing resampled, nothing beating",
-                 "The stream's size at the fastest rate the screen has for it – sharp, but not locked in step")
-
-SLICE_LABELS = ("1 (default)", "2", "4")
-SLICE_HINTS = ("One picture in one piece – how everything so far was measured",
-               "Experiment: two strips per picture. x264 only. Costs a little bitrate, as nothing is predicted across the edge",
-               "Experiment: four strips per picture – as many as the decoder has SPUs. x264 only")
-RATE_LABELS = ("Variable", "Constant quality", "Constant bitrate")
-RATE_HINTS = ("Bitrate only when something moves – the original setting",
-              "Default: measured the lowest latency (29 ms), and text stays sharp on an idle desktop",
-              "Holds the rate exactly and pads with filler when it has to, which the server throws away again")
-
-LOSS_RECOVERY_KINDS = ("intra", "keyframe")
-LOSS_RECOVERY_LABELS = ("Intra-Refresh", "Keyframes")
-LOSS_RECOVERY_HINTS = ("Default: repairs the picture continuously, with no bitrate spikes",
-                       "Whole keyframes once a second – in case NVENC accumulates artefacts over time")
-COMMAND_KINDS = ("none", "run")
-COMMAND_KIND_LABELS = ("None", "Run a command or URI")
-
-# The grid hands the console `fps` pictures a second whatever the desktop does. A source ABOVE that has
-# some of its pictures replaced before their slot, and unevenly - which is exactly what judder is, even
-# while every counter still reads 60. Measured across sessions: a source at ~60/s put 94-97 % of pictures
-# on the grid, one at 67-83/s only 68-76 %. Below the band the source itself is simply slow and pictures
-# are held; that is visible for a different reason and is not the capture's doing.
-# The band is the servo's, see capture.SERVO_SLEW_FRACTION: inside it the grid follows the source exactly.
-SOURCE_BAND = 0.0333
-
-
-def source_rate_text(captured_fps: int, fps: int) -> str:
-    """The live source rate for the status line, with a word on it when it is outside the servo band."""
-    if captured_fps <= 0:
-        return ""
-    # captured_fps is a whole number, so the band has to be rounded outwards or the two rates at its very
-    # edge read as outside it. The servo was measured locking at 62/s and letting go at 63.
-    low, high = int(fps * (1 - SOURCE_BAND)), -int(-fps * (1 + SOURCE_BAND) // 1)
-    if captured_fps > high:
-        note = " – above the cadence, pictures are being discarded"
-    elif captured_fps < low:
-        note = " – below the cadence, pictures are being held"
-    else:
-        note = " – on the cadence"
-    return " · source %d/s%s" % (captured_fps, note)
-
-
-STATUS_STOPPED = "Stopped"
-STATUS_WAITING = "Waiting for a PS3 …"
-STATUS_CONNECTED = "PS3 connected: "
-HIDE_HINT = ("Closing the window leaves the server running in the background. "
-             "Quit from the tray icon or the menu.")
-COMMANDS_INTRO = ("On the PS3, SELECT + Triangle / Circle / L1 / R1 fires commands 1 to 4. It only sends the "
-                  "number – what happens is set here: a URI such as steam://open/bigpicture (xdg-open) "
-                  "or a command line (sh -c). So a device on the network can never start anything you have not "
-                  "entered here.")
 
 CSS = """
 .status-card { padding: 18px; }
@@ -356,13 +97,6 @@ def _open_log_fallback(reason: str) -> None:
                          stderr=subprocess.DEVNULL, start_new_session=True)
     except OSError as error:
         log.write(_("could not open the log: %s / %s") % (reason, error))
-
-
-def status_text(armed: bool, connected: bool, who: str) -> str:
-    """The one line the window's status card and the tray's tooltip both show - defined once so they cannot drift."""
-    if not armed:
-        return _(STATUS_STOPPED)
-    return _(STATUS_CONNECTED) + who if connected else _(STATUS_WAITING)
 
 
 class MainWindow(Adw.ApplicationWindow):
@@ -499,25 +233,24 @@ class MainWindow(Adw.ApplicationWindow):
         group.add(self.size_row)
 
         self.fps_row = Adw.ComboRow(title=_("Frame rate"),
-                                    subtitle=_("The PS3 shows 59.94 pictures a second. 30 and 60 land evenly on that, "
-                                               "50 and 55 do not – they buy the console time per picture instead"),
+                                    subtitle=_(FPS_HINT),
                                     model=Gtk.StringList.new(list(fps_labels())))
         self.fps_row.connect("notify::selected", self._on_fps_selected)
         group.add(self.fps_row)
 
         self.bitrate_row = Adw.ComboRow(title=_("Bitrate"),
-                                        subtitle=_("Lower it when the picture judders on the PS3 – raise it only while it stays fluid"),
+                                        subtitle=_(BITRATE_HINT),
                                         model=Gtk.StringList.new(list(bitrate_labels())))
         self.bitrate_row.connect("notify::selected", self._on_bitrate_selected)
         group.add(self.bitrate_row)
 
-        self.coder_row = Adw.ComboRow(title="Entropie-Codierung",
+        self.coder_row = Adw.ComboRow(title=_("Entropy coding"),
                                       subtitle=_("The PS3 decodes CAVLC about 43 % faster – CABAC only while the picture stays fluid"),
                                       model=Gtk.StringList.new([_(text) for text in ENTROPY_LABELS]))
         self.coder_row.connect("notify::selected", self._on_coder_selected)
         group.add(self.coder_row)
 
-        self.rate_row = Adw.ComboRow(title="Ratensteuerung",
+        self.rate_row = Adw.ComboRow(title=_("Rate control"),
                                      subtitle=_("What the encoder spends its bitrate on – only the x264 encoder can do all three"),
                                      model=Gtk.StringList.new([_(text) for text in RATE_LABELS]))
         self.rate_row.connect("notify::selected", self._on_rate_selected)
@@ -556,7 +289,30 @@ class MainWindow(Adw.ApplicationWindow):
         box.append(group)
         hint = Gtk.Label(label=_(HIDE_HINT), xalign=0, wrap=True, css_classes=["dim-label", "caption"])
         box.append(hint)
+        box.append(self._build_support_group())
         return box
+
+    def _build_support_group(self) -> Gtk.Widget:
+        """The three links, clickable, in the window itself rather than in an About box.
+
+        An About box is where a link goes to be seen once. The donation one pays for the server this
+        project is built and hosted on, and a single euro covers a month of it - worth saying where
+        somebody actually looks."""
+        group = Adw.PreferencesGroup(title=_(DONATE_HEADLINE), description=_(DONATE_PITCH),
+                                     margin_top=12)
+        for title, link, url in ((_("Donate"), LINK_DONATE, URL_DONATE),
+                                 (_("All my projects"), LINK_HUB, URL_HUB),
+                                 (_("Source code"), LINK_GITHUB, URL_GITHUB)):
+            row = Adw.ActionRow(title=title, subtitle=link, activatable=True)
+            # the whole row opens it - a link the size of a row beats a link the size of a word on a
+            # screen somebody is looking at from the other side of the desk
+            row.connect("activated", self._open_link, url)
+            row.add_suffix(Gtk.Image(icon_name="adw-external-link-symbolic"))
+            group.add(row)
+        return group
+
+    def _open_link(self, _row, url: str) -> None:
+        Gtk.UriLauncher(uri=url).launch(self, None, None)
 
     def _build_log_pane(self) -> Gtk.Widget:
         pane = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["log-pane"])
@@ -635,9 +391,13 @@ class MainWindow(Adw.ApplicationWindow):
     def show_about(self) -> Adw.AboutDialog:
         about = Adw.AboutDialog(application_name=APP_NAME, application_icon=APP_EXEC, version=__version__,
                                 developer_name="TEE", license_type=Gtk.License.APACHE_2_0, copyright="© 2026 TEE",
+                                website=URL_GITHUB, issue_url=URL_GITHUB + "/issues",
                                 comments=("Streams the PC desktop to a PS3 running the cell-stream app and plays "
                                           "its controller back on the PC.\n\nLinux port of cell-stream-server "
                                           "(ps3-dev, Release %s)." % UPSTREAM_VERSION))
+        # Adw puts these under "Details", which is where somebody goes looking for them
+        about.add_link(_("Donate") + " – " + _(DONATE_PITCH_SHORT), URL_DONATE)
+        about.add_link(_("All my projects"), URL_HUB)
         about.present(self)
         return about
 
@@ -818,7 +578,7 @@ class MainWindow(Adw.ApplicationWindow):
         dialog = Adw.AlertDialog(heading=_("Can you see this window?"),
                                  body=self._confirm_body(seconds))
         dialog.add_response("no", _("No, switch back"))
-        dialog.add_response("yes", "Ja, so lassen")
+        dialog.add_response("yes", _("Yes, keep it"))
         dialog.set_response_appearance("yes", Adw.ResponseAppearance.SUGGESTED)
         dialog.set_response_appearance("no", Adw.ResponseAppearance.DESTRUCTIVE)
         dialog.set_default_response("yes")
@@ -998,7 +758,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         subtitle = server.settings_summary if (armed or server.trip_reason is None) else server.trip_reason
         if connected:
-            subtitle += source_rate_text(server.captured_fps, protocol.FPS)
+            subtitle += source_rate_text(server.captured_fps, int(server.stream_fps))
         if self.subtitle_label.get_text() != subtitle:
             self.subtitle_label.set_text(subtitle)
 

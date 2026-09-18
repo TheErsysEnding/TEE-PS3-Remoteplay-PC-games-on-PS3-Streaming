@@ -58,7 +58,7 @@ picture as soon as it is decoded. That is the next thing, and it is not in this 
 
 ## What you need
 
-- **A PS3 with HEN or CFW**, running `TEE-Remote-Play-v1.0.0.pkg` from [Releases](../../releases).
+- **A PS3 with HEN or CFW**, running `TEE-Remote-Play-v1.0.1.pkg` from [Releases](../../releases).
   Without a PS3-side app there is nothing to stream to — this package is only the PC half.
   mohasi's original [`cell-stream.pkg`](https://github.com/mohasi/ps3-dev/releases/tag/174-a5dd795)
   works too, without the recording and the controls list.
@@ -69,7 +69,7 @@ picture as soon as it is decoded. That is the next thing, and it is not in this 
 ## Install
 
 ```
-sudo apt install ./tee-cell-stream-server_1.0.0_all.deb
+sudo apt install ./tee-cell-stream-server_1.0.1_all.deb
 ```
 
 Get the `.deb` from [Releases](../../releases). Then **log out and back in once** — GNOME only reads newly
@@ -290,6 +290,15 @@ bash packaging/build-deb.sh                        # → dist/*.deb
 the console expects: fragment layout, clock sync, frame pacing, audio packet rate and the controller
 channel. `SPEC.md` documents every module's contract and, where behaviour deviates from the Windows
 original, the measurement that justified it.
+
+## Support this project
+
+It is free; the server it is developed and hosted on is not. **One euro pays for a whole month of it.**
+PayPal, paysafecard, bank transfer and crypto all work, and one euro really is enough:
+
+**https://bero-host.de/spenden/x8atfjdyolqr**
+
+Everything else I make: **https://linktr.ee/theersysending**
 
 ## Credits and licence
 

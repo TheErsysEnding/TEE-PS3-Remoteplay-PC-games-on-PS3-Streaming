@@ -50,6 +50,8 @@ GERMAN = {
         'audio: Aufnahme-Start fehlgeschlagen, streame nur Video (%s)',
     'audio: capturing the speakers: %dHz, %d channels, 16-bit (pulse %s)':
         'audio: nehme die Lautsprecher auf: %dHz, %d Kanäle, 16-bit (pulse %s)',
+    'audio: the desktop sound is not captured on Windows yet, streaming video only':
+        'Audio: Der Desktop-Ton wird unter Windows noch nicht aufgenommen, es geht nur Bild raus',
     'audio: could not open the speakers, streaming video only (%s)':
         'audio: konnte die Lautsprecher nicht öffnen, streame nur Video (%s)',
     'audio: ffmpeg will not start, streaming video only (%s)':
@@ -61,8 +63,8 @@ GERMAN = {
     'autostart: could not change the setting: %s': 'Autostart: konnte die Einstellung nicht ändern: %s',
     'autostart: no longer starts at login': 'Autostart: startet nicht mehr beim Anmelden',
     'autostart: starts at login (minimised)': 'Autostart: startet beim Anmelden (minimiert)',
-    'beacon: `ip addr` failed (%s), announcing only to %s':
-        'beacon: `ip addr` fehlgeschlagen (%s), sende nur an %s',
+    'beacon: `%s` failed (%s), announcing only to %s':
+        'Beacon: `%s` fehlgeschlagen (%s), sende nur an %s',
     'capture: %s does not start: %s': 'capture: %s startet nicht: %s',
     'capture: %s started (%dx%d, %d fps, pid %d)': 'capture: %s gestartet (%dx%d, %d fps, pid %d)',
     'capture: %s stopped (%d pictures from the source, %d to ffmpeg: %d new, %d repeats, ':
@@ -173,6 +175,49 @@ GERMAN = {
     'no video encoder works on this PC (ffmpeg is missing or cannot do H.264)':
         'auf diesem PC funktioniert kein Video-Encoder (ffmpeg fehlt oder kann kein H.264)',
     'nothing from the PS3 for %dms': 'seit %dms nichts von der PS3',
+    # --- Windows-Fassung (siehe plat.py) ---
+    'Desktop Duplication only exists on Windows': 'Desktop Duplication gibt es nur unter Windows',
+    'capture: ddagrab on output %d (%d fps, scaled to %dx%d)':
+        'Aufnahme: ddagrab auf Ausgang %d (%d fps, umgerechnet auf %dx%d)',
+    'gdigrab only exists on Windows': 'gdigrab gibt es nur unter Windows',
+    'capture: gdigrab (%d fps, scaled to %dx%d)': 'Aufnahme: gdigrab (%d fps, umgerechnet auf %dx%d)',
+    'display: could not read the current resolution, streaming scaled instead':
+        'Anzeige: aktuelle Auflösung nicht lesbar, es wird skaliert gestreamt',
+    'display: %dx%d@%g was refused, streaming scaled instead':
+        'Anzeige: %dx%d@%g wurde abgelehnt, es wird skaliert gestreamt',
+    'display: desktop switched to %dx%d@%g (was %dx%d@%d)':
+        'Anzeige: Desktop auf %dx%d@%g umgeschaltet (war %dx%d@%d)',
+    'display: restoring %dx%d failed - please switch back in the display settings':
+        'Anzeige: Zurückschalten auf %dx%d fehlgeschlagen - bitte in den Anzeigeeinstellungen zurückstellen',
+    'display: desktop back at %dx%d': 'Anzeige: Desktop wieder auf %dx%d',
+    'pad: vgamepad is missing - install it with: pip install vgamepad':
+        'Pad: vgamepad fehlt - installieren mit: pip install vgamepad',
+    'pad: could not create the virtual gamepad (%s) - is ViGEmBus installed?':
+        'Pad: virtuelles Gamepad konnte nicht angelegt werden (%s) - ist ViGEmBus installiert?',
+    'pad: virtual Xbox 360 gamepad created (ViGEmBus)': 'Pad: virtuelles Xbox-360-Gamepad angelegt (ViGEmBus)',
+    'pad: this build drives Windows input, but this is not Windows':
+        'Pad: diese Fassung steuert Windows-Eingaben, das hier ist aber kein Windows',
+    'pad: SendInput was refused - is something blocking input?':
+        'Pad: SendInput wurde abgelehnt - blockiert etwas die Eingabe?',
+    'pad: input to Windows failed: %s': 'Pad: Eingabe an Windows fehlgeschlagen: %s',
+    'ffmpeg: the path in the settings does not exist (%s), looking for one instead':
+        'ffmpeg: Der Pfad aus den Einstellungen existiert nicht (%s), es wird selbst gesucht',
+    'ffmpeg: none of the %d found can do %s - the screen capture will be the slow one':
+        'ffmpeg: Keines der %d gefundenen kann %s - die Bildschirmaufnahme wird die langsame sein',
+    'ffmpeg: not found. Install it (winget install Gyan.FFmpeg) or put ffmpeg.exe next to this program.':
+        'ffmpeg: nicht gefunden. Installiere es (winget install Gyan.FFmpeg) oder lege ffmpeg.exe neben '
+        'dieses Programm.',
+    'console: Windows refused the close handler - closing the window will not put the desktop back':
+        'Konsole: Windows hat den Schliessen-Handler abgelehnt - das Fenster zuzumachen stellt die '
+        'Aufloesung nicht zurueck',
+    'pointer: no mouse on this PC - the cursor would be invisible, so the keyboard-mouse setting is on while streaming':
+        'Zeiger: An diesem PC haengt keine Maus - der Mauszeiger waere unsichtbar, deshalb ist die '
+        'Tastaturmaus waehrend des Streams eingeschaltet',
+    'pointer: could not change the cursor setting (%s)':
+        'Zeiger: Die Zeiger-Einstellung liess sich nicht aendern (%s)',
+    'power: Windows refused the display-awake request':
+        'Energie: Windows hat das Wachhalten des Bildschirms abgelehnt',
+    'power: cannot keep the display awake (%s)': 'Energie: Bildschirm kann nicht wachgehalten werden (%s)',
     'the stream broke off %d times in a row without ever holding - the PS3 cannot keep up with these settings (try a lower bitrate or size)':
         'der Stream ist %d Mal hintereinander abgerissen, ohne je zu halten - die PS3 kommt mit diesen Einstellungen nicht mit (weniger Bitrate oder kleinere Auflösung)',
     'once, then it enables itself. Until then the picture freezes as soon as a ':
@@ -300,12 +345,14 @@ GERMAN = {
         'display: %dx%d wurde abgelehnt (%s), streame stattdessen skaliert',
     'live: %d frames sent': 'live: %d Frames gesendet',
     'live: SINFO to %s failed: %s': 'live: SINFO an %s fehlgeschlagen: %s',
-    'live: ffmpeg exited after %d frames. It said:\n%s':
-        'live: ffmpeg hat sich nach %d Frames beendet. Es sagte:\n%s',
+    'live: ffmpeg exited by itself after %d frames, code %s. It said:\n%s':
+        'live: ffmpeg hat sich nach %d Bildern selbst beendet, Code %s. Es sagte:\n%s',
     'live: first frame sent %d ms after the encoder started':
         'live: erstes Frame %d ms nach Encoder-Start gesendet',
     'live: screen capture (%s) aborted: %s': 'live: Bildschirmaufnahme (%s) abgebrochen: %s',
     'live: sending to %s failed: %s': 'live: Senden an %s fehlgeschlagen: %s',
+    'live: the screen was not free yet, trying %s again in %g s':
+        'live: der Bildschirm war noch nicht frei, %s wird in %g s erneut versucht',
     'live: stream to %s:%d ended': 'live: Stream an %s:%d beendet',
     'live: the picture source aborted: %s': 'live: Bildquelle abgebrochen: %s',
     'live: the pump aborted: %r': 'live: Pumpe abgebrochen: %r',

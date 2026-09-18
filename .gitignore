@@ -26,3 +26,10 @@ ps3-tests/
 branding/
 PSXPLACE-post.md
 PSXPLACE-post.bbcode.txt
+
+# Windows-Bau: fremde Binaerdateien und fertige Pakete gehoeren in ein Release, nicht ins Repo.
+# ffmpeg.exe allein sind 99 MB, und der ViGEmBus-Installer ist Nefarius' Datei, nicht unsere.
+windows/ffmpeg.exe
+windows/ViGEmBus_*.exe
+windows/dist/
+windows/*.exe

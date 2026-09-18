@@ -37,7 +37,7 @@ NVENC_DELAY_ARGS = ["-delay", "0"]
 
 @dataclass
 class VideoEncoder:
-    kind: str                       # "nvenc" | "vaapi" | "x264" - what settings.json remembers
+    kind: str                       # "nvenc" | "amf" | "vaapi" | "x264" - what settings.json remembers
     name: str                       # what the window shows
     probe_args: list[str] = field(default_factory=list)   # encodes one black frame: if that works, this PC has the hardware
     supports_intra_refresh: bool = True
@@ -50,6 +50,12 @@ class VideoEncoder:
 LADDER: list[VideoEncoder] = [
     VideoEncoder("nvenc", "NVIDIA GPU (NVENC)",
                  _PROBE_HEAD + _PROBE_SOURCE + ["-c:v", "h264_nvenc", "-f", "null", "-"], True),
+    # AMD's own encoder, and the first hardware rung that can do EVERYTHING the PS3 wants: the option
+    # list on the test machine (Radeon 780M, driver 32.0.11021.1011) has -coder cavlc, -intra_refresh_mb,
+    # -profile constrained_baseline and -level 42. VA-API cannot do intra refresh and does not exist on
+    # Windows at all; AMF is the Windows path for the same silicon, so it goes above it.
+    VideoEncoder("amf", "AMD GPU (AMF)",
+                 _PROBE_HEAD + _PROBE_SOURCE + ["-c:v", "h264_amf", "-f", "null", "-"], True),
     # VA-API has no intra refresh in ffmpeg's wrapper, so this rung streams with periodic keyframes and
     # tells the PS3 so (SINFO flag 0). untested here - no Intel/AMD GPU on the development PC.
     VideoEncoder("vaapi", "Intel/AMD GPU (VA-API)",
@@ -176,6 +182,50 @@ def _rate_args(kbps: int, rate_control: str = "vbr") -> list[str]:
             "-maxrate", "%dk" % (kbps * protocol.REFRESH_MAX_RATE_PERCENT // 100)] + tail
 
 
+# AMF's rate control has its own names, and not all of them exist on every card. Measured on the test
+# machine (Radeon 780M, driver 32.0.11021.1011), each with the server's own filter chain:
+#
+#   cqp          works      constant QP - the real equivalent of x264's CRF
+#   cbr          works
+#   vbr_latency  works      what "variable" becomes here: the latency-constrained variant
+#   vbr_peak     works
+#   qvbr         REFUSED    encoder->Init() failed with error 1, with AND without a bitrate
+#   hqvbr        REFUSED    the same
+#
+# qvbr was the first thing I reached for as the CRF equivalent, and it is the one this hardware will not
+# start at all - which is why "constant quality" is cqp here and not a quality LEVEL.
+_AMF_RATE_CONTROL = {"cbr": "cbr", "quality": "cqp", "vbr": "vbr_latency"}
+
+
+def _amf_rate_args(kbps: int, rate_control: str) -> list[str]:
+    bufsize = min(kbps * protocol.REFRESH_BUFFER_MS // 1000, protocol.MAX_VBV_KBIT)
+    ceiling = kbps * protocol.REFRESH_MAX_RATE_PERCENT // 100
+    head = ["-rc", _AMF_RATE_CONTROL.get(rate_control, "vbr_latency")]
+    # AMF can be told the hard limit for ONE picture, in bits, and the PS3 needs exactly that: it drops
+    # a picture larger than its own per-frame limit outright. The other rungs can only approach this
+    # through the VBV window; here it is a real ceiling, so it is set on every mode.
+    tail = ["-max_au_size", str(protocol.MAX_VBV_KBIT * 1000), "-bufsize", "%dk" % bufsize, "-bf", "0"]
+    if rate_control == "cbr":
+        return head + ["-b:v", "%dk" % kbps, "-maxrate", "%dk" % kbps, "-minrate", "%dk" % kbps] + tail
+    if rate_control == "quality":
+        # constant QP on I and P alike. There are no B pictures here (-bf 0), so qp_b would do nothing.
+        # QUALITY_CRF is an x264 CRF number being used as a QP - not the same scale, but close enough
+        # that 20 lands in the same place: visually clean without being wasteful.
+        return head + ["-qp_i", str(protocol.QUALITY_CRF), "-qp_p", str(protocol.QUALITY_CRF)] + tail
+    return head + ["-b:v", "%dk" % kbps, "-maxrate", "%dk" % ceiling] + tail
+
+
+def _intra_refresh_mbs(width: int, height: int, fps: int) -> int:
+    """How many macroblocks AMF must refresh per picture for one full sweep in REFRESH_SWEEP_SECONDS.
+
+    x264 and nvenc take the sweep LENGTH as -g and work the strip out themselves; AMF wants the strip
+    directly, in macroblocks per picture. Same sweep, expressed the other way round: at 1920x1080 that
+    is 120 x 68 = 8160 macroblocks over 60 pictures, so 136 of them per picture."""
+    macroblocks = ((width + 15) // 16) * ((height + 15) // 16)
+    pictures = max(1, round(protocol.REFRESH_SWEEP_SECONDS * max(1, fps)))
+    return max(1, -(-macroblocks // pictures))     # round up: a short sweep beats one that never closes
+
+
 def _gop_args(interval_seconds: float, fps: int) -> list[str]:
     """-g is the interval between keyframes (periodic-keyframe modes) or the length of a full refresh sweep
     (x264 and nvenc with intra refresh on - see the nvenc note in build_ffmpeg_args)."""
@@ -250,6 +300,38 @@ def build_ffmpeg_args(ffmpeg_path: str, encoder: VideoEncoder, capture_input_arg
         else:
             args += _gop_args(protocol.KEYFRAME_INTERVAL_SECONDS, fps)
         args += ["-color_range", "tv", "-colorspace", "bt709", "-forced-idr", "1"]
+        args += _OUTPUT
+        return args
+
+    if encoder.kind == "amf":
+        args += capture_input_args
+        if capture_needs_scale:
+            args += ["-vf", _scale_filter(width, height, "nv12")]
+        # usage/quality/latency are AMF's three latency knobs, and async_depth is the one that matters
+        # most: it defaults to 16, which means sixteen pictures of output buffering in a program whose
+        # whole budget is 25 ms. preanalysis and frame_skipping are off for the same reason - one looks
+        # ahead, the other decides on its own to drop a picture the PS3 is waiting for.
+        args += ["-c:v", "h264_amf",
+                 "-usage", "ultralowlatency",
+                 "-quality", "speed",
+                 "-latency", "1",
+                 "-async_depth", "1",
+                 "-preanalysis", "0",
+                 "-frame_skipping", "0",
+                 # the PS3's decoder is a Constrained Baseline decoder; level 4.2 is what its
+                 # macroblock rate allows (see protocol.max_fps_for_level42)
+                 "-profile", "constrained_baseline",
+                 "-level", "42",
+                 "-pix_fmt", "nv12"]
+        args += _coder_args(entropy_coder)
+        args += _amf_rate_args(kbps, rate_control)
+        if intra:
+            # AMF wants the sweep as a macroblock count per picture, not as a -g. It also keeps writing
+            # IDRs on -g while refreshing, which is not what the sweep is for, so -g is the keyframe
+            # interval in both modes here and the sweep is expressed only by intra_refresh_mb.
+            args += ["-intra_refresh_mb", str(_intra_refresh_mbs(width, height, fps))]
+        args += _gop_args(protocol.KEYFRAME_INTERVAL_SECONDS, fps)
+        args += ["-forced_idr", "1", "-color_range", "tv", "-colorspace", "bt709"]
         args += _OUTPUT
         return args
 

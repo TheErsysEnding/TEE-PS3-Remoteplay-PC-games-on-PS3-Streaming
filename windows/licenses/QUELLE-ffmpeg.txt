@@ -1,0 +1,31 @@
+﻿Quelltext zum mitgelieferten ffmpeg.exe  /  Corresponding Source for the bundled ffmpeg.exe
+===========================================================================================
+
+Das ffmpeg.exe in diesem Ordner ist ein unveraendertes fremdes Programm. Es steht unter der
+GNU General Public License, Version 3 (siehe LICENSE-ffmpeg.txt) und wird von "TEE PS3 Remoteplay"
+lediglich als eigener Prozess gestartet - nicht eingebunden, nicht gelinkt, nicht veraendert.
+
+Version des Baus:   FFmpeg 9.0.1-essentials_build-www.gyan.dev  (64-bit, statisch, Windows)
+Herkunft:           https://www.gyan.dev/ffmpeg/builds/
+Quelltext:          https://github.com/FFmpeg/FFmpeg/commit/bf1b838f2a
+                    (dieser Commit wird in README-ffmpeg.txt vom Bauenden selbst genannt)
+Bauskripte:         https://github.com/GyanD/codexffmpeg
+Vollstaendige configure-Zeile und alle enthaltenen Bibliotheken: README-ffmpeg.txt
+
+GPL v3, Abschnitt 6 Buchstabe d: Der vollstaendige zugehoerige Quelltext ist an den oben genannten
+Orten frei zugaenglich, und zwar genau in der Fassung, aus der dieses Binaerprogramm gebaut wurde.
+
+Schriftliches Angebot: Wer den Quelltext lieber auf einem Datentraeger haette, bekommt ihn gegen
+Erstattung der reinen Versandkosten. Anfragen an:
+
+    github@teebug.de
+
+-------------------------------------------------------------------------------------------
+
+The ffmpeg.exe in this folder is an unmodified third-party program under the GNU General Public
+License v3 (see LICENSE-ffmpeg.txt). "TEE PS3 Remoteplay" only starts it as a separate process; it
+does not link against it and does not modify it.
+
+The complete corresponding source for this exact build is freely available at the locations named
+above (GPL v3 section 6d). On request it is also supplied on physical media against shipping
+costs: github@teebug.de

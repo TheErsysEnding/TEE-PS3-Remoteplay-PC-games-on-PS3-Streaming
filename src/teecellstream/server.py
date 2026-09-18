@@ -9,25 +9,24 @@ The window (app.py/ui.py) is only a view onto this object: closing the window le
 
 import atexit
 import os
-import shutil
 import signal
 import socket
 import sys
 import threading
 import time
 
-from . import capture, custom_commands, encoders, log, netinfo, protocol, shell_extension
+from . import custom_commands, encoders, ffmpeg_find, log, netinfo, protocol
 from .audio import AudioStreamer
 from .childproc import kill_all
 from .clock import now_us
-from .desktop_input import DesktopInput
-from . import display_mode
-from .display_mode import DisplayMode
 from .live_streamer import LiveStreamer
 from .pad_receiver import PadReceiver
-from .power import keep_display_awake
 from .settings import settings
-from .virtual_gamepad import VirtualGamepad
+# Everything below differs between Linux and Windows and is chosen once, in plat - see that module for
+# why it is not a try/except around each import here.
+from .plat import (DesktopInput, DisplayMode, VirtualGamepad, capture, display_mode,
+                   install_close_handler, keep_display_awake, shell_extension,
+                   show_pointer_without_mouse)
 from .i18n import _
 
 BIND_ATTEMPTS = 25
@@ -77,7 +76,9 @@ class Server:
         # stretch a 27 ms keyframe to over 500 ms once another Python thread was busy. 0.5 ms keeps it tight.
         sys.setswitchinterval(0.0005)
 
-        self.ffmpeg_path = shutil.which("ffmpeg") or "ffmpeg"
+        # a plain PATH lookup is not enough on Windows: PATH may hold no ffmpeg at all, or one
+        # that cannot capture the screen. ffmpeg_find asks each candidate what it can do.
+        self.ffmpeg_path = ffmpeg_find.find(str(settings.get("ffmpeg_path", "") or ""))
         self.live_streamer = LiveStreamer(
             self.sock, self.ffmpeg_path, self.stream_fps, protocol.KBPS, protocol.WIDTH, protocol.HEIGHT,
             protocol.SEND_RATE_KBPS, capture.create_capture, lambda: self.encoders_to_try,
@@ -109,11 +110,23 @@ class Server:
     def install_exit_hooks(self) -> None:
         """Desktop resolution and child processes must be put back whatever way we die. Call from the main thread."""
         atexit.register(self.shutdown)
-        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        # SIGHUP does not exist on Windows - and asking for it by name is an AttributeError, not a
+        # ValueError, so it cannot be caught by the loop below. Look it up instead of naming it.
+        # SIGBREAK is Windows' Ctrl+Break. Python hooks Ctrl+C for us and nothing else, so without this
+        # Ctrl+Break ends the process the hard way - desktop left at the streaming resolution.
+        wanted = [signal.SIGTERM, signal.SIGINT]
+        for name in ("SIGHUP", "SIGBREAK"):
+            extra = getattr(signal, name, None)
+            if extra is not None:
+                wanted.append(extra)
+        for signum in wanted:
             try:
                 signal.signal(signum, self._on_signal)
             except (ValueError, OSError):
                 pass   # not the main thread (the GTK app installs its own handlers instead)
+        # Closing a console window is how a Windows user quits, and it raises an event rather than
+        # sending a signal - without this the desktop stays at the streaming resolution. No-op elsewhere.
+        install_close_handler(self.shutdown)
 
     def _on_signal(self, signum, frame):
         self.shutdown()
@@ -456,6 +469,9 @@ class Server:
                 self.connected_ps3 = sender[0]
                 # the desktop must be at the streaming size BEFORE the capture starts
                 keep_display_awake(True)
+                # a Windows PC with no mouse draws no cursor, and the console would see the pointer
+                # move nothing at all. Only touches anything when there really is no mouse.
+                show_pointer_without_mouse(True)
                 strategy = self.display_strategy
                 if strategy != "off" and not os.environ.get("TEE_CST_NO_DISPLAY_SWITCH"):
                     self.display_mode.match_for_capture(*self.stream_size, self.stream_fps, strategy)
@@ -555,6 +571,7 @@ class Server:
             # in the same millisecond), and the second one used to cancel the hold and switch the desktop
             # back at once - which put the black screen back into every single retry.
             keep_display_awake(False)   # idle again: let the screen sleep
+            show_pointer_without_mouse(False)   # and give the PC its own cursor setting back
             if was_streaming:
                 log.write(_("stream ended: ") + why + _(". Waiting for the PS3 again."))
         if give_up:
@@ -568,15 +585,25 @@ class Server:
                 if self._restore_due is not None:
                     # a mode held open for a reconnect that never came: put the desktop back now
                     if time.monotonic() >= self._restore_due:
-                        self._restore_due = None
                         with self.stream_lock:
-                            self.display_mode.restore()
+                            if self._restore_due is not None and not self.is_ps3_connected:
+                                self._restore_due = None
+                                self.display_mode.restore()
                     continue
                 # the pump can stop on its own (every encoder failed, or ffmpeg died) with nothing to put the
                 # desktop back. if it left the resolution switched, restore it here - explicitly, because
                 # stop_streaming deliberately leaves the display alone when there was no session to end
+                #
+                # EVERYTHING here is decided a second time inside the lock, and that is the whole point. A
+                # PLAY is handled under the same lock, and switching the desktop is the FIRST thing it does -
+                # on Windows that alone takes over a second (the screen capture cannot start until the mode
+                # has settled). So the state this tick looked at - nobody streaming, desktop already switched -
+                # is exactly the state a stream that is starting up passes through. Deciding outside the lock
+                # and acting inside it tore down every single Windows stream in the millisecond it began.
                 if self.display_mode.is_changed:
                     with self.stream_lock:
+                        if self.is_ps3_connected or not self.display_mode.is_changed:
+                            continue     # a PLAY got there first: that is a stream starting, not one that died
                         self.stop_streaming("the encoder stopped on its own")
                         self._restore_due = None
                         self.display_mode.restore()

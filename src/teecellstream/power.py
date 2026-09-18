@@ -91,3 +91,8 @@ def _call(service: tuple[str, str, str], method: str, parameters: GLib.Variant, 
 def _error_text(error: GLib.Error) -> str:
     # "GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name ... " -> just the reason
     return re.sub(r"^GDBus\.Error:[^:]+:\s*", "", error.message or "").strip() or str(error)
+
+
+def show_pointer_without_mouse(on: bool) -> None:
+    """Windows only (see power_windows): there a PC with no mouse draws no cursor at all. X11 and Wayland
+    draw the pointer whether or not a mouse is plugged in, so there is nothing to do here."""

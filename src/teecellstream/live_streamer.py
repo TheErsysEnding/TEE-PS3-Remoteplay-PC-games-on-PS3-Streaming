@@ -24,6 +24,8 @@ from .i18n import _
 FIRST_FRAME_TIMEOUT_S = 5.0
 ENCODER_EXIT_WAIT_S = 3.0             # terminate, then this long, then kill
 FAILED_STARTS_BEFORE_GIVING_UP = 3
+BUSY_SOURCE_RETRIES = 2               # a screen source that was only busy gets this many more tries
+BUSY_SOURCE_WAIT_S = 0.8
 READ_CHUNK_BYTES = 64 * 1024
 ERROR_TAIL_CHARS = 2000
 PUMP_JOIN_S = 2.0
@@ -39,7 +41,8 @@ class _Session:
     """One PLAY's worth of state. A fresh object per start() so a pump that is still winding down can never
     read the flags of the session that replaced it."""
 
-    __slots__ = ("target", "active", "intra", "width", "height", "process", "capture", "encoder")
+    __slots__ = ("target", "active", "intra", "width", "height", "process", "capture", "encoder",
+                 "source_was_busy")
 
     def __init__(self, target, intra: bool, width: int, height: int):
         self.target = target
@@ -52,6 +55,7 @@ class _Session:
         self.process: subprocess.Popen | None = None
         self.capture = None
         self.encoder: encoders.VideoEncoder | None = None
+        self.source_was_busy = False    # last attempt produced nothing because the screen was not free yet
 
 
 class LiveStreamer:
@@ -268,6 +272,23 @@ class LiveStreamer:
     # such STOPs would have tripped the fuse with the misleading "no encoder starts". but a rung that
     # produced no frames before the STOP landed is still counted, or a ladder that takes longer to fail than
     # the grace (5 s first-frame timeout per rung) would never trip it and the desktop would flap forever.
+    # A source that produced no frames is not always a source that cannot work: on Windows the Desktop
+    # Duplication API answers "access denied" for up to ~0.9 s after the desktop changed resolution, and
+    # the first PS3 connection to the Windows server hit exactly that - switch and capture start were 4 ms
+    # apart. display_windows now waits that out, so this is the second line of defence, for the PC where
+    # it takes longer than measured. Only the capture backend decides what counts (transient_failure);
+    # a wrong setting still fails on the first try, as it should.
+    def _pump_with_retry(self, session: _Session, encoder):
+        outcome = self._pump_encoder(session, encoder)
+        for _again in range(BUSY_SOURCE_RETRIES):
+            if outcome is not False or not session.active or not session.source_was_busy:
+                break
+            log.write(_("live: the screen was not free yet, trying %s again in %g s")
+                      % (encoder.name, BUSY_SOURCE_WAIT_S))
+            time.sleep(BUSY_SOURCE_WAIT_S)
+            outcome = self._pump_encoder(session, encoder)
+        return outcome
+
     def _run_pump(self, session: _Session) -> None:
         try:
             attempts = list(self._encoders_to_try())
@@ -278,7 +299,7 @@ class LiveStreamer:
                 if not session.active:
                     break
                 log.write("live: versuche Encoder " + encoder.name)
-                outcome = self._pump_encoder(session, encoder)
+                outcome = self._pump_with_retry(session, encoder)
                 if outcome is None:
                     capture_failed = session.active   # no picture source at all: the other encoders would fail the same way
                     break
@@ -317,6 +338,7 @@ class LiveStreamer:
     # produced nothing (caller falls back to the next encoder), True otherwise, None if the capture itself
     # would not start (pointless to try another encoder on it).
     def _pump_encoder(self, session: _Session, encoder: encoders.VideoEncoder):
+        session.source_was_busy = False   # this attempt's answer, never the last one's
         try:
             capture = self._create_capture()
         except Exception as error:   # noqa: BLE001
@@ -453,6 +475,7 @@ class LiveStreamer:
         first_frame_seen.set()   # release the timeout thread if we're leaving for any other reason
         timeout_thread.join()
         died_on_its_own = process.poll() is not None   # note it before we terminate it ourselves
+        natural_code = process.poll()                  # and its own exit code, before _end_process kills it
 
         # ffmpeg first (SIGTERM only, no wait), then the capture: a feeder blocked on a write to a stalled
         # encoder is freed by the pipe breaking, so stopping the capture can never wait on it. then reap.
@@ -470,14 +493,20 @@ class LiveStreamer:
         session.capture = None
 
         if frame_id == 0:
-            log.write("live: the encoder produced no frames. ffmpeg said:\n" + error_tail["text"].strip())
+            # the exit code belongs in the line even when ffmpeg said nothing at all - a silent ffmpeg
+            # that simply stopped is a different fault from one that printed a reason, and without the
+            # code the log cannot tell them apart
+            log.write("live: the encoder produced no frames (ffmpeg exit %s). ffmpeg said:\n%s"
+                      % (natural_code, error_tail["text"].strip() or "(nothing)"))
+            session.source_was_busy = capture.transient_failure(error_tail["text"])
             return False
         # An encoder that died mid-stream used to leave nothing behind but the feeder's "broken pipe":
         # the reason was drained into error_tail and then thrown away, because only the zero-frame case
         # printed it. A session that ends because ffmpeg quit is exactly when that text is wanted.
         # session.active is still true here when the pump is leaving on its own rather than being stopped.
-        if session.active and died_on_its_own and error_tail["text"].strip():
-            log.write(_("live: ffmpeg exited after %d frames. It said:\n%s") % (frame_id, error_tail["text"].strip()))
+        if session.active and died_on_its_own:
+            log.write(_("live: ffmpeg exited by itself after %d frames, code %s. It said:\n%s")
+                      % (frame_id, natural_code, error_tail["text"].strip() or "(nothing)"))
         log.write(_("live: %d frames sent") % frame_id)
         return True
 

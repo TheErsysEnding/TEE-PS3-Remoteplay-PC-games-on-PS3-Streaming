@@ -15,6 +15,7 @@ import os
 import queue
 import re
 import struct
+import sys
 import subprocess
 import threading
 import time
@@ -28,6 +29,7 @@ try:
 except ImportError:                               # childproc not present (tests of this module alone)
     _child_popen = None
 
+WINDOWS = sys.platform == "win32"
 SAMPLE_RATE = protocol.AUDIO_SAMPLE_RATE
 CHANNELS = protocol.AUDIO_CHANNELS
 BYTES_PER_FRAME = CHANNELS * 2                    # s16 stereo
@@ -322,6 +324,7 @@ class AudioCapture:
         self._stderr_thread: threading.Thread | None = None
         self._stderr_tail = ""
         self._first_data = threading.Event()
+        self._windows_notice_written = False
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -333,6 +336,15 @@ class AudioCapture:
         self.source = None
         with self._ring_gate:
             self._ring = bytearray()
+
+        if WINDOWS:
+            # Everything below speaks PulseAudio, which Windows has not got. ffmpeg's way in there is
+            # -f dshow, and only if a loopback device exists ("Stereomix" and friends are off by default
+            # on most PCs). Until that is built, saying so once beats two doomed ffmpeg starts per stream.
+            if not self._windows_notice_written:
+                self._windows_notice_written = True
+                log.write(_("audio: the desktop sound is not captured on Windows yet, streaming video only"))
+            return False
 
         sources = self._sources_to_try()   # never raises: an ffmpeg it cannot run simply lists nothing
         if not sources:

@@ -59,7 +59,18 @@ NIGHT = (4, 6, 12)           # the cut-off tile corners
 HEAVY = "/usr/share/fonts/opentype/montserrat/Montserrat-ExtraBold.otf"
 MEDIUM = "/usr/share/fonts/opentype/montserrat/Montserrat-SemiBold.otf"
 
-LINK = "linktr.ee/theersysending"
+# The three of them come from the package's own module, so a link never has to be typed twice - the
+# window, the PS3 app and this artwork all read the same strings.
+import sys as _sys
+_sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
+from teecellstream import LINK_DONATE as _DONATE, LINK_HUB as _HUB   # noqa: E402
+
+LINK = _HUB
+DONATE_LINK = _DONATE
+# Short enough for the tile's 184 px measure at 12 px. The full sentence lives on PIC1, which has a
+# whole 1920 px to say it in.
+DONATE_TILE = "1 EUR = 1 MONTH SERVER"
+DONATE_LONG = "1 EUR keeps this project's server up for a month"
 VERSION_LABEL = "V1.0"
 # What the release is actually about, and the one thing worth claiming on a tile seen from a sofa.
 # Short form on the 320 px tile, full form on the background where there is room for it.
@@ -449,6 +460,15 @@ def make_icon():
     ver_w = tracked_width(d, VERSION_LABEL, shelf, 1.8)
     assert cap_w + ver_w + 12 <= MEASURE, "tile shelf: %d + %d does not fit in %d" % (cap_w, ver_w, MEASURE)
 
+    # NO link on the tile, and it was tried twice. The tile is 320x176 with a safe area that ends at
+    # y=166; the shelf's ink ends at 156. Eleven pixels is not a line, and at 12 px the address
+    # measures 198 against a 184 px block. Both attempts were caught by the checks in this file
+    # rather than by looking, which is the point of having them.
+    #
+    # What the tile carries instead is the word TEE at 60 px, which is the most legible thing on it.
+    # The addresses live on PIC1 - the full-screen picture the XMB shows whenever this tile is
+    # selected, where there are 1920 px to say them in.
+
     # The tile's own corners get clipped too - the concept applied to the frame itself. Cut with
     # near-black rather than transparency because the XMB composites the tile over its own
     # background and an alpha corner would show whatever is behind it.
@@ -528,7 +548,13 @@ def make_background():
 
     # The link is the one quiet element, so it may use the secondary band. It has to clear the
     # CFW's network overlay, which starts at y=915.
-    quiet = [("link", right_text(d, 1880, 856, LINK, font(MEDIUM, 24), DIM))]
+    # Three lines now, stacked upward from the same right edge so the block still closes cleanly.
+    # The donation address gets the brighter colour of the three: it is the one that pays for the
+    # server this whole thing is built and hosted on, and one euro covers a month of it.
+    body = font(MEDIUM, 24)
+    quiet = [("pitch", right_text(d, 1880, 796, DONATE_LONG, font(MEDIUM, 20), DIM)),
+             ("donate", right_text(d, 1880, 826, DONATE_LINK, body, STEEL)),
+             ("link", right_text(d, 1880, 856, LINK, body, DIM))]
     print("  PIC1  secondary")
     check("footer", quiet, SECONDARY, FORBIDDEN)
 

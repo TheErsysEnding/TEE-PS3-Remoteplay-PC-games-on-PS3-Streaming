@@ -3,16 +3,20 @@
 The machine can have several network adapters (libvirt and VirtualBox add virtual ones), and a plain
 255.255.255.255 broadcast only leaves through ONE of them - often the wrong one. So the beacon goes to
 every adapter's own broadcast address (e.g. 192.0.2.255) plus the global one.
+
+Linux is asked through `ip -j addr`, Windows through the IP Helper API (see netinfo_windows).
 """
 
 import ipaddress
 import json
 import shutil
 import subprocess
+import sys
 
 from . import log, protocol
 from .i18n import _
 
+WINDOWS = sys.platform == "win32"
 GLOBAL_BROADCAST = "255.255.255.255"
 IP_ARGUMENTS = ["-j", "-4", "addr", "show", "up"]
 IP_TIMEOUT_S = 5
@@ -73,7 +77,33 @@ def _broadcast_of(address: dict, flags: list) -> str | None:
 
 
 def get_beacon_targets() -> list[tuple[str, int]]:
-    """The global broadcast plus every live interface's own; the global one alone if `ip` cannot be asked."""
+    """The global broadcast plus every live interface's own; the global one alone if nobody will say."""
+    if WINDOWS:
+        return _windows_beacon_targets()
+    return _linux_beacon_targets()
+
+
+def _windows_beacon_targets() -> list[tuple[str, int]]:
+    """Windows has no `ip`; the same list comes out of the IP Helper API."""
+    global _failure_reported
+    from . import netinfo_windows
+    targets = [(GLOBAL_BROADCAST, protocol.BEACON_PORT)]
+    try:
+        broadcasts = netinfo_windows.interface_broadcasts()
+    except (OSError, AttributeError) as error:
+        if not _failure_reported:
+            _failure_reported = True
+            log.write(_("beacon: `%s` failed (%s), announcing only to %s")
+                      % ("GetAdaptersAddresses", error, GLOBAL_BROADCAST))
+        return targets
+    for broadcast in broadcasts:
+        target = (broadcast, protocol.BEACON_PORT)
+        if target not in targets:
+            targets.append(target)
+    return targets
+
+
+def _linux_beacon_targets() -> list[tuple[str, int]]:
     global _failure_reported
     # a desktop autostart may run with a PATH without /usr/sbin, where iproute2 lives
     ip_command = shutil.which("ip") or "/usr/sbin/ip"
@@ -86,6 +116,7 @@ def get_beacon_targets() -> list[tuple[str, int]]:
     except (OSError, subprocess.SubprocessError, RuntimeError) as error:
         if not _failure_reported:
             _failure_reported = True
-            log.write(_("beacon: `ip addr` failed (%s), announcing only to %s") % (error, GLOBAL_BROADCAST))
+            log.write(_("beacon: `%s` failed (%s), announcing only to %s")
+                      % ("ip addr", error, GLOBAL_BROADCAST))
         return [(GLOBAL_BROADCAST, protocol.BEACON_PORT)]
     return parse_beacon_targets(output)

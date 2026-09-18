@@ -1315,7 +1315,13 @@ class PacingTests(unittest.TestCase):
                 # working, and 20 would already mean the halving is back.
                 self.assertLess(late, 20, "%d slots skipped for a write that fits in one" % late)
                 sd, longest = _StampedSink.spread([(b - a) for a, b in zip(times, times[1:])])
-                self.assertLess(longest, 2 * self.INTERVAL_MS, "longest gap %.1f ms" % longest)
+                # Three intervals, not two. One skipped slot IS a gap of exactly two intervals, and the
+                # lines above deliberately allow a handful of those - so a limit of 2x contradicted the
+                # test's own tolerance and came down to which side of 33.33 ms the scheduler landed on.
+                # It failed at 33.42 ms on a loaded machine and passed on an idle one, which is a coin
+                # toss, not a regression. What this line is for is a STALL; the halving it guards against
+                # makes every gap two intervals and is caught by the rate floor above (30/s against 57).
+                self.assertLess(longest, 3 * self.INTERVAL_MS, "longest gap %.1f ms" % longest)
 
     def test_a_write_that_cannot_fit_its_slot_skips_instead_of_bursting(self):
         # The other side of the same branch: once the write really is longer than a slot, the grid points

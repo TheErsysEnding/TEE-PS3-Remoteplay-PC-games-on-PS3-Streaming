@@ -40,9 +40,8 @@ BTN_THUMBL, BTN_THUMBR = 0x13D, 0x13E
 ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ = 0x00, 0x01, 0x02, 0x03, 0x04, 0x05
 ABS_HAT0X, ABS_HAT0Y = 0x10, 0x11
 
-STICK_DEAD_ZONE = 12          # the PS3's sticks rest a few counts off centre
-STICK_FULL_TILT = 115.0
-AXIS_MAX = 32767              # sticks -32768..32767, like xpad
+# the stick curve and AXIS_MAX now live in stick.py, so Windows can use exactly the same one
+from .stick import AXIS_MAX, STICK_DEAD_ZONE, STICK_FULL_TILT, to_axis   # noqa: F401
 STICK_FUZZ, STICK_FLAT = 16, 128
 TRIGGER_MAX = 255             # L2/R2 are digital in the PS3 packet: released or fully pulled
 
@@ -57,15 +56,6 @@ BUTTON_MAP = (
 UI_GET_SYSNAME_64 = 0x8040552C    # _IOC(_IOC_READ, 'U', 44, 64): the sysfs name of a uinput device
 
 
-def to_axis(value: int) -> int:
-    """The PS3 reads -128..127 and rests a little off centre; evdev wants -32768..32767 centred."""
-    tilt = 0.0
-    if value >= STICK_DEAD_ZONE:
-        tilt = (value - STICK_DEAD_ZONE) / (STICK_FULL_TILT - STICK_DEAD_ZONE)
-    elif value <= -STICK_DEAD_ZONE:
-        tilt = (value + STICK_DEAD_ZONE) / (STICK_FULL_TILT - STICK_DEAD_ZONE)
-    tilt = max(-1.0, min(1.0, tilt))
-    return int(tilt * AXIS_MAX)     # truncates toward zero, like the (short) cast in the original
 
 
 def report_for(buttons: int, left_x: int, left_y: int, right_x: int, right_y: int) -> list[tuple[int, int, int]]:
