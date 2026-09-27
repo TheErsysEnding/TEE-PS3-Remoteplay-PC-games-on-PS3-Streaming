@@ -1152,6 +1152,17 @@ class PacingTests(unittest.TestCase):
             log.write, capture.TRACE_SOURCE_RATE = saved_write, saved_flag
         self.assertEqual([], [line for line in lines if line.startswith("trace: ")])
 
+    def test_display_lock_runs_the_grid_at_the_consoles_refresh(self):
+        """A 60.00/s source against a 59.94 Hz television: with the lock the grid follows the TELEVISION."""
+        self.cap.set_display_clock(1001 / 60000, 0.0)
+        rate = self._run(60, seconds=3.0)
+        self.assertAlmostEqual(59.94, rate, delta=0.05)
+
+    def test_display_lock_nudge_moves_the_phase_once(self):
+        self.cap.set_display_clock(1 / FPS, 0.004)
+        self._run(FPS, seconds=1.0)
+        self.assertEqual(0.0, self.cap._display_nudge, "the step is applied once, not every slot")
+
     def test_source_at_120_is_capped_at_the_stream_rate(self):
         rate = self._run(120)
         self.assertTrue(54 <= rate <= 66, "120 fps source came out at %.1f fps (cap is %d)" % (rate, FPS))

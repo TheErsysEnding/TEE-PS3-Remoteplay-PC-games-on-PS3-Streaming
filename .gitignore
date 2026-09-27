@@ -33,3 +33,12 @@ windows/ffmpeg.exe
 windows/ViGEmBus_*.exe
 windows/dist/
 windows/*.exe
+
+# test material of the 1.1.0 cycle, and the local ffmpeg build tree (only its patches and README are published)
+deblock-test/
+release-archiv/
+FUER-MOHASI-3.md
+ffmpeg-nvenc/*
+!ffmpeg-nvenc/*.patch
+!ffmpeg-nvenc/README.md
+ffmpeg-nvenc/nvenc-dblk_idc.patch

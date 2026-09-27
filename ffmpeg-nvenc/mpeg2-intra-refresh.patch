@@ -1,0 +1,72 @@
+--- a/libavcodec/mpegvideoenc.h
++++ b/libavcodec/mpegvideoenc.h
+@@ -227,6 +227,10 @@
+ 
+     int scenechange_threshold;
+ 
++    /// TEE: cyclic intra refresh - frames per full top-to-bottom sweep of intra rows in P-pictures (0 = off)
++    int intra_refresh;
++    int intra_refresh_pos;
++
+     int noise_reduction;
+ 
+     float border_masking;
+@@ -359,6 +363,7 @@
+                                                                     FF_RC_OFFSET(rc_eq), AV_OPT_TYPE_STRING,                           .flags = FF_MPV_OPT_FLAGS },            \
+ {"rc_init_cplx", "initial complexity for 1-pass encoding",          FF_RC_OFFSET(initial_cplx), AV_OPT_TYPE_FLOAT, {.dbl = 0 }, -FLT_MAX, FLT_MAX, FF_MPV_OPT_FLAGS},       \
+ {"rc_buf_aggressivity", "currently useless",                        FF_RC_OFFSET(buffer_aggressivity), AV_OPT_TYPE_FLOAT, {.dbl = 1.0 }, -FLT_MAX, FLT_MAX, FF_MPV_OPT_FLAGS}, \
++{"intra_refresh", "TEE: frames per cyclic intra-refresh sweep in P-pictures (0 = off)", FF_MPV_MAIN_OFFSET(intra_refresh), AV_OPT_TYPE_INT, {.i64 = 0 }, 0, INT_MAX, FF_MPV_OPT_FLAGS }, \
+ {"border_mask", "increase the quantizer for macroblocks close to borders", FF_MPV_MAIN_OFFSET(border_masking), AV_OPT_TYPE_FLOAT, {.dbl = 0 }, -FLT_MAX, FLT_MAX, FF_MPV_OPT_FLAGS},    \
+ {"lmin", "minimum Lagrange factor (VBR)",                           FF_MPV_MAIN_OFFSET(lmin), AV_OPT_TYPE_INT, {.i64 =  2*FF_QP2LAMBDA }, 0, INT_MAX, FF_MPV_OPT_FLAGS },            \
+ {"lmax", "maximum Lagrange factor (VBR)",                           FF_MPV_MAIN_OFFSET(lmax), AV_OPT_TYPE_INT, {.i64 = 31*FF_QP2LAMBDA }, 0, INT_MAX, FF_MPV_OPT_FLAGS },            \
+--- a/libavcodec/mpegvideo_enc.c
++++ b/libavcodec/mpegvideo_enc.c
+@@ -3814,6 +3814,7 @@
+                 m->mb_var_sum, m->mc_mb_var_sum);
+     }
+ 
++
+     if (!s->umvplus) {
+         if (s->c.pict_type == AV_PICTURE_TYPE_P || s->c.pict_type == AV_PICTURE_TYPE_S) {
+             s->f_code = ff_get_best_fcode(m, s->p_mv_table, CANDIDATE_MB_TYPE_INTER);
+@@ -3866,6 +3867,40 @@
+         }
+     }
+ 
++    /* TEE: cyclic intra refresh. Each P-picture codes the next band of macroblock rows as intra, so
++     * after one sweep every part of the picture has been renewed without a whole I-picture - no size
++     * spike, and a stream that lost data heals by itself within one sweep.
++     * The rows above the band were renewed earlier in this sweep and are the "clean" part; they may
++     * only predict from the clean part of the previous picture (rows above the band as well), or a
++     * lost picture's damage is dragged straight back into them. A vector reaching lower is not
++     * allowed, and that macroblock is coded intra instead. MPEG-1/2 vectors are half-pel. */
++    if (m->intra_refresh > 0) {
++        if (s->c.pict_type == AV_PICTURE_TYPE_I) {
++            m->intra_refresh_pos = 0;
++        } else if (s->c.pict_type == AV_PICTURE_TYPE_P) {
++            int period = FFMIN(m->intra_refresh, s->c.mb_height);
++            int band   = m->intra_refresh_pos % period;
++            int first  = band * s->c.mb_height / period;
++            int last   = (band + 1) * s->c.mb_height / period;
++            for (int y = 0; y < last; y++) {
++                for (int x = 0; x < s->c.mb_width; x++) {
++                    int xy = x + y * s->c.mb_stride;
++                    if (y < first) {
++                        int my   = s->p_mv_table[xy][1];
++                        int myc  = my / 2;
++                        int luma = y * 16 + 15 + (my  >> 1) + (my  & 1);
++                        int chro = y *  8 +  7 + (myc >> 1) + (myc & 1);
++                        if ((s->mb_type[xy] & CANDIDATE_MB_TYPE_INTRA) ||
++                            (luma < first * 16 && chro < first * 8))
++                            continue;
++                    }
++                    s->mb_type[xy] = CANDIDATE_MB_TYPE_INTRA;
++                }
++            }
++            m->intra_refresh_pos = band + 1;
++        }
++    }
++
+     ret = estimate_qp(m, 0);
+     if (ret < 0)
+         return ret;

@@ -101,6 +101,16 @@ def send_access_unit(sock, target: tuple[str, int], frame_id: int, data, keyfram
 # start codes are found with bytes.find (C speed): at 10Mbit/s that is ~1000 NALs a second, and walking
 # the buffer byte by byte in Python was measured far too slow to keep up with the encoder.
 class AnnexBSplitter:
+    _HEADER_BYTES = 1           # H.264's NAL header is one byte
+    _FILLER = _FILLER_NAL_TYPE
+
+    @staticmethod
+    def _nal(data, header: int) -> tuple[int, bool, bool, bool]:
+        """(type, is a picture slice, is a keyframe slice, opens a new picture) of the NAL whose header
+        starts at data[header]. first_mb_in_slice is ue(v): a leading 1 bit means it is 0."""
+        nal_type = data[header] & 0x1F
+        return nal_type, nal_type in _PICTURE_NAL_TYPES, nal_type == 5, bool(data[header + 1] & 0x80)
+
     def __init__(self):
         self._pending = bytearray()
         self._scan = 0               # where the next start-code search begins
@@ -128,18 +138,17 @@ class AnnexBSplitter:
                 # no start code yet; keep the last two bytes in view - they may be the front of a split one
                 self._scan = max(self._scan, available - 2)
                 break
-            if position + 4 >= available:
-                # the NAL header byte AND the first byte behind it have to be here: first_mb_in_slice lives
-                # in that second byte and decides whether a slice opens a picture or continues one
+            if position + 3 + self._HEADER_BYTES >= available:
+                # the NAL header AND the first byte behind it have to be here: first_mb_in_slice lives
+                # in that byte and decides whether a slice opens a picture or continues one
                 self._scan = position
                 break
 
             nal_start = position - 1 if (position > 0 and pending[position - 1] == 0) else position
-            nal_type = pending[position + 3] & 0x1F
-            is_picture = nal_type in _PICTURE_NAL_TYPES
+            nal_type, is_picture, is_keyframe, first_slice = self._nal(pending, position + 3)
             # first_mb_in_slice != 0 means this slice continues the picture that is already open. With one
             # slice per picture the test never fires; with several it is the only thing holding them together.
-            continues_picture = is_picture and self._unit_has_picture and not pending[position + 4] & 0x80
+            continues_picture = is_picture and self._unit_has_picture and not first_slice
 
             if self._unit_start >= 0 and self._unit_has_picture and not continues_picture:
                 # a complete access unit ends where the next one's first unit begins
@@ -154,7 +163,7 @@ class AnnexBSplitter:
                 self._unit_has_picture = False
                 self._unit_keyframe = False
                 self._unit_slices = 0
-            if nal_type == _FILLER_NAL_TYPE:
+            if nal_type == self._FILLER:
                 # opens no unit, so its bytes fall in front of the next one's start and are dropped with
                 # the next trim. it must not extend the unit it follows either - that is what sent it.
                 self._scan = position + 3
@@ -166,7 +175,7 @@ class AnnexBSplitter:
                 self._unit_slices = 0
             if is_picture:
                 self._unit_has_picture = True
-                self._unit_keyframe |= nal_type == 5
+                self._unit_keyframe |= is_keyframe
                 self._unit_slices += 1
             self._scan = position + 3
 
@@ -212,3 +221,87 @@ class AnnexBSplitter:
         average = self._picture_bytes / self._pictures
         return ("sender: %d pictures sent, %s, %.1f KB per picture on average = %.1f fragments"
                 % (self._pictures, spread, average / 1024.0, average / FRAGMENT_PAYLOAD_BYTES))
+
+
+# MPEG-2 video follows a start code with a start-code VALUE, not a NAL header: 0x00 picture, 0x01-0xAF
+# slices, 0xB3 sequence header, 0xB5 extension, 0xB8 group of pictures, 0xB2 user data, 0xB7 sequence end.
+_MPEG2_PICTURE = 0x00
+_MPEG2_SLICE_FIRST, _MPEG2_SLICE_LAST = 0x01, 0xAF
+_MPEG2_SEQUENCE_END = 0xB7
+_MPEG2_OPENERS = (0xB3, 0xB8, _MPEG2_PICTURE)   # what can begin the NEXT picture's unit
+_MPEG2_I_PICTURE = 1                             # picture_coding_type
+
+
+class Mpeg2Splitter:
+    """Access units out of an MPEG-2 elementary stream - the same push / take_access_unit / flush contract as
+    AnnexBSplitter, so the pump does not care which of the two it holds.
+
+    A unit is everything from the headers in front of a picture (an I-picture brings a sequence header and a
+    group-of-pictures header along) through its last slice, and it ends where the next picture's first
+    header begins. Extensions and user data sit between a picture header and its slices and belong to that
+    picture, so only the three openers can end a unit - and only once the unit already holds a slice.
+    Keyframe = an I-picture, read from picture_coding_type two bytes behind the picture start code."""
+
+    def __init__(self):
+        self._pending = bytearray()
+        self._scan = 0
+        self._unit_start = -1
+        self._unit_has_slice = False
+        self._unit_keyframe = False
+        self._completed: tuple[bytes, bool] | None = None
+
+    def push(self, data) -> None:
+        self._pending += data
+
+    def take_access_unit(self) -> tuple[bytes, bool] | None:
+        """One complete access unit as (bytes, keyframe), or None until the next picture has begun."""
+        pending = self._pending
+        find = pending.find
+        while self._completed is None:
+            position = find(_START_CODE, self._scan)
+            available = len(pending)
+            if position < 0:
+                self._scan = max(self._scan, available - 2)
+                break
+            if position + 5 >= available:
+                # the picture header's coding type sits two bytes behind the start-code value
+                self._scan = position
+                break
+            code = pending[position + 3]
+            if self._unit_start >= 0 and self._unit_has_slice and code in _MPEG2_OPENERS:
+                with memoryview(pending) as window:
+                    self._completed = (bytes(window[self._unit_start:position]), self._unit_keyframe)
+                del pending[:position]
+                position = 0
+                self._unit_start = -1
+                self._unit_has_slice = False
+                self._unit_keyframe = False
+            if code == _MPEG2_SEQUENCE_END:
+                self._scan = position + 3   # belongs to no picture
+                continue
+            if self._unit_start < 0:
+                self._unit_start = position
+            if code == _MPEG2_PICTURE:
+                self._unit_keyframe |= ((pending[position + 5] >> 3) & 0x07) == _MPEG2_I_PICTURE
+            elif _MPEG2_SLICE_FIRST <= code <= _MPEG2_SLICE_LAST:
+                self._unit_has_slice = True
+            self._scan = position + 3
+
+        result = self._completed
+        self._completed = None
+        return result
+
+    def flush(self) -> tuple[bytes, bool] | None:
+        """End of stream: the next complete unit, else the open trailing unit if it holds a slice."""
+        unit = self.take_access_unit()
+        if unit is not None:
+            return unit
+        if self._unit_start < 0 or not self._unit_has_slice:
+            return None
+        result = (bytes(self._pending[self._unit_start:]), self._unit_keyframe)
+        self._pending.clear()
+        self._scan = 0
+        self._unit_start = -1
+        self._unit_has_slice = False
+        self._unit_keyframe = False
+        return result

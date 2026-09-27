@@ -129,6 +129,80 @@ SEND_RATE_KBPS = KBPS * 3        # packets may leave faster than the video's own
 BITRATE_CHOICES_KBPS = (4000, 6000, 8000, 10000, 12000, 16000, 20000, 24000, 30000, 35000, 40000)
 ENTROPY_CODERS = ("cavlc", "cabac")
 
+# Whether NVENC runs H.264's deblocking filter. NVENC can switch it off (disableDeblockingFilterIDC in its
+# API), but stock ffmpeg never passes that through - "off" only takes effect with an ffmpeg that has the
+# -dblk_idc option for h264_nvenc (ffmpeg-nvenc/nvenc-dblk_idc.patch). Measured 2026-09-24 with the
+# server's own command line: the flag reaches every slice alongside intra refresh and CAVLC, the picture
+# does not drift, and a single-thread no-SIMD decoder needs 23 % less time. The filter was the largest
+# single cost ever measured on the console (1920x1088: 147 ms with NVENC, 38-44 ms with x264 ultrafast,
+# which leaves it out), but what switching it off buys on the PS3 itself is not measured yet.
+NVENC_DEBLOCKING = ("on", "off")
+# The encoder name SINFO announces when the filter is off. The PS3 shows that word in its stats panel and
+# writes it into every session log, so a log says which variant it measured. At most 15 characters: the
+# console keeps 16 bytes for it, terminator included.
+NVENC_NO_DEBLOCK_NAME = "nvenc-nodeblock"
+
+# Where NVENC may point a motion vector: to quarter pixels (the preset's own choice) or only to whole ones.
+# Measured on the console 2026-09-26, Rocket League at 1080p: NVENC without the filter tips over at about
+# 20 Mbit/s (decode 90-120 ms, every picture broken) while x264 ultrafast holds 40-52 Mbit/s at 25 ms. The
+# difference is how the pictures are built: x264 ultrafast uses only whole-pixel vectors on 16x16 blocks,
+# so the PS3 just copies; NVENC points a share of its vectors to quarter pixels, and each of those costs
+# the console a 6-tap interpolation on the SPUs. "whole" (-mv_precision fullpel, same patched ffmpeg as the
+# filter switch) takes that away - verified on a 1080p pan: sub-pixel vectors 7.2 % -> 0.0 %, PSNR unchanged.
+# What it buys on the PS3 itself is not measured yet. Smaller partitions stay; NVENC has no switch for them.
+NVENC_MOTION = ("quarter", "whole")
+
+# Which codec the stream uses. MPEG-2 is a TEST: far simpler to decode than H.264 (no intra prediction, no
+# deblocking, simple motion compensation), for roughly twice the bitrate - which the wire does not mind.
+# The console has to be able to decode it, so the app says so in its request ("PLAY mpeg2", from
+# V1.1.0 on). A console that does not say so gets H.264 whatever is set here, so an older app can
+# never be sent a stream it would choke on. MPEG-2 Main Profile @ High Level formally ends at 1080p30;
+# whether cellVdec accepts more is part of the test.
+VIDEO_CODECS = ("h264", "mpeg2")
+
+# DISPLAY LOCK. With vsync on, the console reports twice a second how early (+) or late (-) its decoded
+# pictures are relative to the target point before its display's refresh: "PACE <refresh ns> <error us>".
+# The capture grid then runs at the console's refresh interval instead of the source's, and moves its phase by
+# PACE_GAIN of the error per report (at most PACE_MAX_STEP_S), so the pictures keep landing at the same place
+# before each refresh. Without it a 60.00 fps PC against a 59.94 Hz television beat every ~17 s: vsync queued
+# the surplus until a picture fell out (the "waves"), and the queue itself cost 17-30 ms of latency.
+PACE_GAIN = 0.5
+PACE_MAX_STEP_S = 0.002
+PACE_PERIOD_RANGE_NS = (5_000_000, 50_000_000)   # 200 Hz .. 20 Hz: anything else is not a display
+
+
+def parse_pace(text: str) -> tuple[float, float] | None:
+    """(refresh interval s, error s) from a "PACE <ns> <us>" packet, or None when it is not a sane one."""
+    parts = text.split()
+    if len(parts) != 3 or parts[0] != "PACE":
+        return None
+    try:
+        period_ns, error_us = int(parts[1]), int(parts[2])
+    except ValueError:
+        return None
+    if not PACE_PERIOD_RANGE_NS[0] <= period_ns <= PACE_PERIOD_RANGE_NS[1] or abs(error_us) * 1000 > period_ns:
+        return None
+    return period_ns / 1e9, error_us / 1e6
+PLAY_CAPABILITY_MPEG2 = "mpeg2"
+
+
+def play_capabilities(text: str) -> set[str]:
+    """The words after "PLAY" in a console's request: what its app says it can decode besides H.264.
+    A plain "PLAY" (every app before V1.1.0, and mohasi's) says nothing and gets the empty set."""
+    words = text.split()
+    return set(words[1:]) if words and words[0] == "PLAY" else set()
+
+
+def nvenc_variant_name(deblocking_off: bool, whole_pixels: bool) -> str:
+    """The encoder word SINFO announces for NVENC, naming both switches (at most 15 characters, see above)."""
+    if deblocking_off and whole_pixels:
+        return "nvenc-nodb-fpel"
+    if deblocking_off:
+        return NVENC_NO_DEBLOCK_NAME
+    if whole_pixels:
+        return "nvenc-fpel"
+    return "nvenc"
+
 # How the encoder spends the bitrate. Only the x264 rung honours all three; NVENC gets "cbr" as its own
 # -rc cbr and treats "quality" as VBR, because its ull preset has no quality-targeted mode.
 #

@@ -347,6 +347,8 @@ GERMAN = {
     'live: SINFO to %s failed: %s': 'live: SINFO an %s fehlgeschlagen: %s',
     'live: ffmpeg exited by itself after %d frames, code %s. It said:\n%s':
         'live: ffmpeg hat sich nach %d Bildern selbst beendet, Code %s. Es sagte:\n%s',
+    "live: pacing to the PS3's display: %.3f Hz": "live: Takt richtet sich nach dem Bildschirm der PS3: %.3f Hz",
+    "live: display lock: %.3f Hz, pictures %+.1f ms from the target": "live: Bildschirm-Takt: %.3f Hz, Bilder %+.1f ms neben dem Ziel",
     'live: first frame sent %d ms after the encoder started':
         'live: erstes Frame %d ms nach Encoder-Start gesendet',
     'live: screen capture (%s) aborted: %s': 'live: Bildschirmaufnahme (%s) abgebrochen: %s',

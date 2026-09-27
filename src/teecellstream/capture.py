@@ -178,6 +178,8 @@ class _PipeCapture(ScreenCapture):
         self._repeat_frames = 0     # ...the last one sent again because the slot found nothing new
         self._skipped_frames = 0    # source pictures a NEWER one took the place of (never a repeat)
         self._late_slots = 0        # slots lost because a write ran past its own grid point
+        self._display_period = 0.0  # the console's refresh interval once it reports one (set_display_clock), else 0
+        self._display_nudge = 0.0   # phase shift still to apply to the grid, from the console's last report
         # Smoothness, which the frame COUNT cannot show: 60 pictures a second leave even when the content
         # in them is unevenly spaced in time, and that is what an eye reads as judder. These record the gap
         # between the publish times of consecutive DISTINCT pictures as they actually went out.
@@ -526,7 +528,18 @@ class _PipeCapture(ScreenCapture):
             # is wider than the window anyway.
             correction = 0.0
             clean_writes = 0 if new != 1 else clean_writes + 1
-            if new == 1 and clean_writes > SERVO_GATE_WRITES:
+            with self._gate:
+                display_period, nudge = self._display_period, self._display_nudge
+                self._display_nudge = 0.0
+            if display_period:
+                # DISPLAY LOCK: the console's refresh sets the rate and its reports set the phase. The source's
+                # phase no longer steers anything - a source a hair faster than the television simply has a
+                # picture superseded now and then (60.00 against 59.94: one every ~17 s), which is the loss the
+                # console would otherwise have taken at random, as a vsync hiccup.
+                interval = display_period
+                window = interval * WRITE_WINDOW_FRACTION
+                correction = nudge
+            elif new == 1 and clean_writes > SERVO_GATE_WRITES:
                 correction = max(-slew, min(slew, SERVO_GAIN * (published - (due - target))))
             due += interval + correction
             now = time.monotonic()
@@ -589,6 +602,11 @@ class _PipeCapture(ScreenCapture):
                      % (len(arrivals), a_median, arrivals[int(len(arrivals) * 0.90)],
                         arrivals[int(len(arrivals) * 0.99)], 100.0 * a_on_time / len(arrivals)))
         return line
+
+    def set_display_clock(self, period_s: float, nudge_s: float) -> None:
+        with self._gate:
+            self._display_period = period_s
+            self._display_nudge += nudge_s
 
     def stop(self) -> None:
         with self._lifecycle:

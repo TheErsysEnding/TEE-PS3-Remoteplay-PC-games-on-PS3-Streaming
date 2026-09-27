@@ -56,7 +56,7 @@ noch nicht drin.
 ## Installation (1 Klick)
 
 ```
-sudo apt install ./tee-cell-stream-server_1.0.1_all.deb
+sudo apt install ./tee-cell-stream-server_1.1.0_all.deb
 ```
 
 Alles Nötige (ffmpeg mit NVENC, GStreamer/PipeWire, GTK4/libadwaita, evdev, Portal) kommt aus den
@@ -65,7 +65,7 @@ Ubuntu-Paketquellen. Das Paket richtet außerdem ein:
 - `/dev/uinput`-Zugriff für den angemeldeten Benutzer (udev-Regel, wie bei Steam) → virtuelles Gamepad
 - bei aktiver `ufw`-Firewall die Freigabe von **UDP 38310** (die PS3 spricht den Server darauf an)
 
-Auf der PS3 (HEN/CFW): `TEE-Remote-Play-v1.0.1.pkg` aus dem Release installieren.
+Auf der PS3 (HEN/CFW): `TEE-Remote-Play-v1.1.0.pkg` aus dem Release installieren.
 
 ## Benutzung
 

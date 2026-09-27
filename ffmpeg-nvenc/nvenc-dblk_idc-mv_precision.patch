@@ -1,0 +1,45 @@
+diff --git a/libavcodec/nvenc.c b/libavcodec/nvenc.c
+index d81be00..2dc6b9a 100644
+--- a/libavcodec/nvenc.c
++++ b/libavcodec/nvenc.c
+@@ -1312,6 +1312,9 @@ static av_cold int nvenc_setup_h264_config(AVCodecContext *avctx)
+     h264->disableSPSPPS = (avctx->flags & AV_CODEC_FLAG_GLOBAL_HEADER) ? 1 : 0;
+     h264->repeatSPSPPS  = (avctx->flags & AV_CODEC_FLAG_GLOBAL_HEADER) ? 0 : 1;
+     h264->outputAUD     = ctx->aud;
++    h264->disableDeblockingFilterIDC = ctx->dblk_idc;
++    if (ctx->mv_precision)   // 0 leaves the preset's own choice (quarter pel)
++        cc->mvPrecision = ctx->mv_precision;
+ 
+     if (ctx->dpb_size >= 0) {
+         /* 0 means "let the hardware decide" */
+diff --git a/libavcodec/nvenc.h b/libavcodec/nvenc.h
+index 4a4d673..9ffe1be 100644
+--- a/libavcodec/nvenc.h
++++ b/libavcodec/nvenc.h
+@@ -306,6 +306,8 @@ typedef struct NvencContext
+     int extra_sei;
+     int intra_refresh;
+     int single_slice_intra_refresh;
++    int dblk_idc;
++    int mv_precision;
+     int constrained_encoding;
+     int udu_sei;
+     int timing_info;
+diff --git a/libavcodec/nvenc_h264.c b/libavcodec/nvenc_h264.c
+index 842e4ee..482912f 100644
+--- a/libavcodec/nvenc_h264.c
++++ b/libavcodec/nvenc_h264.c
+@@ -227,6 +227,13 @@ static const AVOption options[] = {
+                                                             OFFSET(intra_refresh),AV_OPT_TYPE_BOOL,  { .i64 = 0 }, 0, 1, VE },
+     { "single-slice-intra-refresh", "Use single slice intra refresh",
+                                                             OFFSET(single_slice_intra_refresh), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
++    { "dblk_idc",     "Deblocking filter: 0 = on, 1 = off, 2 = off across slice edges only",
++                                                            OFFSET(dblk_idc),     AV_OPT_TYPE_INT,   { .i64 = 0 }, 0, 2, VE },
++    { "mv_precision", "Motion vector precision",            OFFSET(mv_precision), AV_OPT_TYPE_INT,   { .i64 = 0 }, 0, NV_ENC_MV_PRECISION_QUARTER_PEL, VE, .unit = "mv_precision" },
++    { "default",      "The preset's own choice",            0,                    AV_OPT_TYPE_CONST, { .i64 = 0 }, 0, 0, VE, .unit = "mv_precision" },
++    { "fullpel",      "Whole pixels only: the decoder copies, no sub-pixel interpolation", 0, AV_OPT_TYPE_CONST, { .i64 = NV_ENC_MV_PRECISION_FULL_PEL }, 0, 0, VE, .unit = "mv_precision" },
++    { "halfpel",      "Half pixels",                        0,                    AV_OPT_TYPE_CONST, { .i64 = NV_ENC_MV_PRECISION_HALF_PEL }, 0, 0, VE, .unit = "mv_precision" },
++    { "qpel",         "Quarter pixels",                     0,                    AV_OPT_TYPE_CONST, { .i64 = NV_ENC_MV_PRECISION_QUARTER_PEL }, 0, 0, VE, .unit = "mv_precision" },
+     { "max_slice_size", "Maximum encoded slice size in bytes",
+                                                             OFFSET(max_slice_size), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
+     { "constrained-encoding", "Enable constrainedFrame encoding where each slice in the constrained picture is independent of other slices",

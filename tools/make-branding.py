@@ -71,7 +71,7 @@ DONATE_LINK = _DONATE
 # whole 1920 px to say it in.
 DONATE_TILE = "1 EUR = 1 MONTH SERVER"
 DONATE_LONG = "1 EUR keeps this project's server up for a month"
-VERSION_LABEL = "V1.0"
+VERSION_LABEL = "V1.1"
 # What the release is actually about, and the one thing worth claiming on a tile seen from a sofa.
 # Short form on the 320 px tile, full form on the background where there is room for it.
 CAPABILITY = "FULL HD 60 FPS"

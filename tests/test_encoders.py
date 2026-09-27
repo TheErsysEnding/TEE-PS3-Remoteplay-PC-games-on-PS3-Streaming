@@ -794,3 +794,117 @@ class AmfTests(unittest.TestCase):
         self.assertIn("out_color_matrix=bt709", filters)   # the console's shader is BT.709, limited
         self.assertIn("out_range=tv", filters)
         self.assertTrue(filters.endswith("format=nv12"), filters)
+
+
+PATCHED_FFMPEG = os.path.join(os.path.dirname(__file__), "..", "ffmpeg-nvenc", "install", "bin", "ffmpeg")
+
+
+class DeblockingSwitchTests(unittest.TestCase):
+    """NVENC without the deblocking filter (protocol.NVENC_DEBLOCKING): the option only for NVENC, and only
+    for an ffmpeg that says it has it - stock ffmpeg refuses the whole command line over an unknown option."""
+
+    def setUp(self):
+        encoders._nvenc_help_known.clear()
+        self.addCleanup(encoders._nvenc_help_known.clear)
+
+    def _fake_ffmpeg(self, help_text, exit_code=0):
+        folder = tempfile.mkdtemp(prefix="tee-ffmpeg-")
+        self.addCleanup(shutil.rmtree, folder, True)
+        path = os.path.join(folder, "ffmpeg")
+        with open(path, "w") as script:
+            script.write("#!/bin/sh\ncat <<'END'\n%s\nEND\nexit %d\n" % (help_text, exit_code))
+        os.chmod(path, 0o755)
+        return path
+
+    def test_off_appends_the_option_after_the_nvenc_tail(self):
+        args = encoders.build_ffmpeg_args(FF, NVENC, RAW_INPUT, 1280, 720, 60, 10000, "intra", False,
+                                          nvenc_deblocking_off=True)
+        self.assertEqual(args[-(len(OUT) + len(NVENC_TAIL) + 2):],
+                         NVENC_TAIL + ["-dblk_idc", "1"] + OUT)
+
+    def test_default_leaves_the_command_line_as_it_was(self):
+        self.assertNotIn("-dblk_idc", _build(NVENC, "intra"))
+        self.assertEqual(_build(NVENC, "intra"),
+                         encoders.build_ffmpeg_args(FF, NVENC, RAW_INPUT, 1280, 720, 60, 10000, "intra", False,
+                                                    nvenc_deblocking_off=False))
+
+    def test_the_other_rungs_ignore_it(self):
+        for encoder in (AMF, VAAPI, X264):
+            args = encoders.build_ffmpeg_args(FF, encoder, RAW_INPUT, 1280, 720, 60, 10000, "intra", False,
+                                              nvenc_deblocking_off=True)
+            self.assertNotIn("-dblk_idc", args, encoder.kind)
+
+    def test_probe_answers_from_the_help_text(self):
+        with_option = self._fake_ffmpeg("  -dblk_idc          <int>        E..V....... Deblocking filter")
+        without = self._fake_ffmpeg("  -max_slice_size    <int>        E..V....... Maximum encoded slice size")
+        self.assertTrue(encoders.nvenc_can_skip_deblocking(with_option))
+        self.assertFalse(encoders.nvenc_can_skip_deblocking(without))
+
+    def test_probe_says_no_when_ffmpeg_fails_or_is_missing(self):
+        failing = self._fake_ffmpeg("  -dblk_idc  (but the binary exits with an error)", exit_code=1)
+        self.assertFalse(encoders.nvenc_can_skip_deblocking(failing))
+        self.assertFalse(encoders.nvenc_can_skip_deblocking("/nonexistent/ffmpeg"))
+        self.assertFalse(encoders.nvenc_can_skip_deblocking(""))
+        self.assertFalse(encoders.nvenc_can_skip_deblocking(None))
+
+    def test_probe_asks_each_binary_once(self):
+        path = self._fake_ffmpeg("  -dblk_idc          <int>")
+        self.assertTrue(encoders.nvenc_can_skip_deblocking(path))
+        os.remove(path)   # a second question would now fail - the cached answer must stand
+        self.assertTrue(encoders.nvenc_can_skip_deblocking(path))
+
+    def test_the_name_fits_the_console(self):
+        # the PS3 keeps 16 bytes for SINFO's encoder word, terminator included, and stops at a space
+        self.assertLessEqual(len(protocol.NVENC_NO_DEBLOCK_NAME), 15)
+        self.assertNotIn(" ", protocol.NVENC_NO_DEBLOCK_NAME)
+
+    @unittest.skipUnless(FFMPEG, "ffmpeg wird gebraucht")
+    def test_stock_ffmpeg_has_no_switch(self):
+        self.assertFalse(encoders.nvenc_can_skip_deblocking(FFMPEG))
+
+    @unittest.skipUnless(os.path.isfile(PATCHED_FFMPEG), "das gepatchte ffmpeg ist nicht gebaut")
+    def test_the_patched_build_has_it(self):
+        self.assertTrue(encoders.nvenc_can_skip_deblocking(os.path.abspath(PATCHED_FFMPEG)))
+
+
+class WholePixelSwitchTests(DeblockingSwitchTests):
+    """NVENC's motion vectors on whole pixels (protocol.NVENC_MOTION): the same rules as the filter switch -
+    only for NVENC, only for an ffmpeg that lists the option. Inherits the setUp and the fake ffmpeg."""
+
+    def test_whole_pixels_append_the_option_after_the_nvenc_tail(self):
+        args = encoders.build_ffmpeg_args(FF, NVENC, RAW_INPUT, 1280, 720, 60, 10000, "intra", False,
+                                          nvenc_whole_pixels=True)
+        self.assertEqual(args[-(len(OUT) + len(NVENC_TAIL) + 2):], NVENC_TAIL + ["-mv_precision", "fullpel"] + OUT)
+
+    def test_both_switches_together(self):
+        args = encoders.build_ffmpeg_args(FF, NVENC, RAW_INPUT, 1280, 720, 60, 10000, "intra", False,
+                                          nvenc_deblocking_off=True, nvenc_whole_pixels=True)
+        self.assertEqual(args[-(len(OUT) + len(NVENC_TAIL) + 4):],
+                         NVENC_TAIL + ["-dblk_idc", "1", "-mv_precision", "fullpel"] + OUT)
+
+    def test_the_other_rungs_ignore_whole_pixels(self):
+        for encoder in (AMF, VAAPI, X264):
+            args = encoders.build_ffmpeg_args(FF, encoder, RAW_INPUT, 1280, 720, 60, 10000, "intra", False,
+                                              nvenc_whole_pixels=True)
+            self.assertNotIn("-mv_precision", args, encoder.kind)
+
+    def test_probe_reads_each_option_on_its_own(self):
+        only_deblock = self._fake_ffmpeg("  -dblk_idc          <int>")
+        both = self._fake_ffmpeg("  -dblk_idc          <int>\n  -mv_precision      <int>")
+        self.assertTrue(encoders.nvenc_can_skip_deblocking(only_deblock))
+        self.assertFalse(encoders.nvenc_can_use_whole_pixels(only_deblock))
+        self.assertTrue(encoders.nvenc_can_use_whole_pixels(both))
+        self.assertFalse(encoders.nvenc_can_use_whole_pixels("/nonexistent/ffmpeg"))
+
+    def test_every_variant_name_fits_the_console(self):
+        for off in (False, True):
+            for whole in (False, True):
+                name = protocol.nvenc_variant_name(off, whole)
+                self.assertLessEqual(len(name), 15, name)
+                self.assertNotIn(" ", name)
+        self.assertEqual("nvenc", protocol.nvenc_variant_name(False, False))
+        self.assertEqual(protocol.NVENC_NO_DEBLOCK_NAME, protocol.nvenc_variant_name(True, False))
+
+    @unittest.skipUnless(os.path.isfile(PATCHED_FFMPEG), "das gepatchte ffmpeg ist nicht gebaut")
+    def test_the_patched_build_has_whole_pixels(self):
+        self.assertTrue(encoders.nvenc_can_use_whole_pixels(os.path.abspath(PATCHED_FFMPEG)))

@@ -28,7 +28,9 @@ WINDOW_WIDTH = 640
 WINDOW_HEIGHT = 600
 NARROW_BREAKPOINT = "max-width: 500sp"
 
-from .ui_text import (BITRATE_HINT, FPS_HINT, status_text, COMMANDS_INTRO, COMMAND_KINDS, COMMAND_KIND_LABELS, DISPLAY_HINTS, DISPLAY_LABELS, 
+from .ui_text import (BITRATE_HINT, FPS_HINT, status_text, COMMANDS_INTRO, COMMAND_KINDS, COMMAND_KIND_LABELS, DISPLAY_HINTS, DISPLAY_LABELS,
+                      DEBLOCK_HINTS, DEBLOCK_LABELS, DEBLOCK_UNAVAILABLE_HINT,
+                      MOTION_HINTS, MOTION_LABELS, MOTION_UNAVAILABLE_HINT, CODEC_HINTS, CODEC_LABELS,
                       ENTROPY_HINTS, ENTROPY_LABELS, HIDE_HINT, LANGUAGE_CODES, LANGUAGE_LABELS, 
                       LOSS_RECOVERY_HINTS, LOSS_RECOVERY_KINDS, LOSS_RECOVERY_LABELS, RATE_HINTS, 
                       RATE_LABELS, SIZE_HINT_BY_SIZE, SLICE_HINTS, SLICE_LABELS, SOURCE_BAND, 
@@ -244,11 +246,26 @@ class MainWindow(Adw.ApplicationWindow):
         self.bitrate_row.connect("notify::selected", self._on_bitrate_selected)
         group.add(self.bitrate_row)
 
+        self.codec_row = Adw.ComboRow(title=_("Codec"),
+                                      model=Gtk.StringList.new([_(text) for text in CODEC_LABELS]))
+        self.codec_row.connect("notify::selected", self._on_codec_selected)
+        group.add(self.codec_row)
+
         self.coder_row = Adw.ComboRow(title=_("Entropy coding"),
                                       subtitle=_("The PS3 decodes CAVLC about 43 % faster – CABAC only while the picture stays fluid"),
                                       model=Gtk.StringList.new([_(text) for text in ENTROPY_LABELS]))
         self.coder_row.connect("notify::selected", self._on_coder_selected)
         group.add(self.coder_row)
+
+        self.deblock_row = Adw.ComboRow(title=_("NVENC deblocking filter"),
+                                        model=Gtk.StringList.new([_(text) for text in DEBLOCK_LABELS]))
+        self.deblock_row.connect("notify::selected", self._on_deblock_selected)
+        group.add(self.deblock_row)
+
+        self.motion_row = Adw.ComboRow(title=_("NVENC motion vectors"),
+                                       model=Gtk.StringList.new([_(text) for text in MOTION_LABELS]))
+        self.motion_row.connect("notify::selected", self._on_motion_selected)
+        group.add(self.motion_row)
 
         self.rate_row = Adw.ComboRow(title=_("Rate control"),
                                      subtitle=_("What the encoder spends its bitrate on – only the x264 encoder can do all three"),
@@ -492,6 +509,42 @@ class MainWindow(Adw.ApplicationWindow):
             return
         self._server.entropy_coder = protocol.ENTROPY_CODERS[index]
 
+    def _on_codec_selected(self, row, _pspec) -> None:
+        if self._syncing:
+            return
+        index = row.get_selected()
+        if index < 0 or index >= len(protocol.VIDEO_CODECS) or protocol.VIDEO_CODECS[index] == self._server.video_codec:
+            return
+        if self._server.is_ps3_connected:
+            log.write(_("video: end the stream first, then change the codec"))
+            self._sync_choices()
+            return
+        self._server.video_codec = protocol.VIDEO_CODECS[index]
+
+    def _on_deblock_selected(self, row, _pspec) -> None:
+        if self._syncing:
+            return
+        index = row.get_selected()
+        if index < 0 or index >= len(protocol.NVENC_DEBLOCKING) or protocol.NVENC_DEBLOCKING[index] == self._server.nvenc_deblocking:
+            return
+        if self._server.is_ps3_connected:
+            log.write(_("video: end the stream first, then change the deblocking filter"))
+            self._sync_choices()
+            return
+        self._server.nvenc_deblocking = protocol.NVENC_DEBLOCKING[index]
+
+    def _on_motion_selected(self, row, _pspec) -> None:
+        if self._syncing:
+            return
+        index = row.get_selected()
+        if index < 0 or index >= len(protocol.NVENC_MOTION) or protocol.NVENC_MOTION[index] == self._server.nvenc_motion:
+            return
+        if self._server.is_ps3_connected:
+            log.write(_("video: end the stream first, then change the motion vectors"))
+            self._sync_choices()
+            return
+        self._server.nvenc_motion = protocol.NVENC_MOTION[index]
+
     def _on_language_selected(self, row, _pspec) -> None:
         if self._syncing:
             return
@@ -532,13 +585,30 @@ class MainWindow(Adw.ApplicationWindow):
         """Each combo row explains its CURRENT choice underneath itself. The dropdown holds short names
         because GTK ellipsises a long selected value at any window size - the sentence goes here, where
         it always fits."""
-        for row, hints in ((self.size_row, size_hints()), (self.coder_row, ENTROPY_HINTS),
+        for row, hints in ((self.size_row, size_hints()), (self.codec_row, CODEC_HINTS), (self.coder_row, ENTROPY_HINTS),
                            (self.rate_row, RATE_HINTS), (self.recovery_row, LOSS_RECOVERY_HINTS),
                            (self.slice_row, SLICE_HINTS),
                            (self.display_row, DISPLAY_HINTS)):
             index = row.get_selected()
             if 0 <= index < len(hints) and row.get_subtitle() != _(hints[index]):
                 row.set_subtitle(_(hints[index]))
+        # the filter switch only exists with an ffmpeg that can pass it on; with any other the row says so
+        # and stays greyed out rather than offering a choice that would change nothing
+        available = bool(getattr(self._server, "nvenc_can_skip_deblocking", False))
+        self.deblock_row.set_sensitive(available)
+        index = self.deblock_row.get_selected()
+        hint = (DEBLOCK_HINTS[index] if 0 <= index < len(DEBLOCK_HINTS) else DEBLOCK_HINTS[0]) if available \
+            else DEBLOCK_UNAVAILABLE_HINT
+        if self.deblock_row.get_subtitle() != _(hint):
+            self.deblock_row.set_subtitle(_(hint))
+        # the motion switch follows the same rule, and usually comes with the same patched ffmpeg
+        available = bool(getattr(self._server, "nvenc_can_use_whole_pixels", False))
+        self.motion_row.set_sensitive(available)
+        index = self.motion_row.get_selected()
+        hint = (MOTION_HINTS[index] if 0 <= index < len(MOTION_HINTS) else MOTION_HINTS[0]) if available \
+            else MOTION_UNAVAILABLE_HINT
+        if self.motion_row.get_subtitle() != _(hint):
+            self.motion_row.set_subtitle(_(hint))
 
     def _on_rate_selected(self, row, _pspec) -> None:
         if self._syncing:
@@ -857,6 +927,21 @@ class MainWindow(Adw.ApplicationWindow):
             index = protocol.SLICE_COUNTS.index(slices) if slices in protocol.SLICE_COUNTS else 0
             if self.slice_row.get_selected() != index:
                 self.slice_row.set_selected(index)
+
+            codec = getattr(server, "video_codec", "h264")
+            index = protocol.VIDEO_CODECS.index(codec) if codec in protocol.VIDEO_CODECS else 0
+            if self.codec_row.get_selected() != index:
+                self.codec_row.set_selected(index)
+
+            deblocking = getattr(server, "nvenc_deblocking", "on")
+            index = protocol.NVENC_DEBLOCKING.index(deblocking) if deblocking in protocol.NVENC_DEBLOCKING else 0
+            if self.deblock_row.get_selected() != index:
+                self.deblock_row.set_selected(index)
+
+            motion = getattr(server, "nvenc_motion", "quarter")
+            index = protocol.NVENC_MOTION.index(motion) if motion in protocol.NVENC_MOTION else 0
+            if self.motion_row.get_selected() != index:
+                self.motion_row.set_selected(index)
 
             self._sync_hints()
 

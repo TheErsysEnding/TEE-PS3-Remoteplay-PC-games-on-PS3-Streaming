@@ -66,6 +66,66 @@ LADDER: list[VideoEncoder] = [
 ]
 
 
+# MPEG-2 on the CPU. A codec, not a rung: NVENC and AMF cannot write it, so it never competes with the
+# H.264 ladder. It is used only when the codec setting asks for it AND the console said it can decode it
+# (protocol.VIDEO_CODECS), with the ladder behind it as the fallback.
+#
+# Stock ffmpeg's MPEG-2 encoder has no intra refresh, so with it these streams recover from a loss with
+# keyframes (MPEG2) - and every keyframe is a size spike the console's frame-time graph shows in red. Our
+# patched ffmpeg (ffmpeg-nvenc/mpeg2-intra-refresh.patch) adds -intra_refresh: each P-picture codes the next
+# band of macroblock rows as intra, and vectors from the renewed part may not reach into the part not yet
+# renewed, so a lost picture is gone after one sweep. Measured (1920x1088, 60 fps, 20 Mbit/s, one picture
+# dropped): stock keyframes, largest picture 77 KB; intra refresh, one I-picture in the whole stream,
+# largest 51 KB, and the decoded picture bit-exact again 30 pictures after the loss. That encoder is
+# MPEG2_REFRESH, chosen by mpeg2_encoder() when the ffmpeg in use lists the option.
+_MPEG2_PROBE = _PROBE_HEAD + _PROBE_SOURCE + ["-c:v", "mpeg2video", "-f", "null", "-"]
+MPEG2 = VideoEncoder("mpeg2", "MPEG-2 (CPU, test)", _MPEG2_PROBE, False)
+MPEG2_REFRESH = VideoEncoder("mpeg2", "MPEG-2 (CPU, test, intra refresh)", _MPEG2_PROBE, True)
+_MPEG2_OUTPUT = ["-f", "mpeg2video", "-flush_packets", "1", "pipe:1"]
+
+_mpeg2_known: dict[str, bool] = {}
+
+
+def mpeg2_available(ffmpeg_path: str) -> bool:
+    """Whether this ffmpeg can encode MPEG-2 (always built in, but asked like every other encoder), once."""
+    if not ffmpeg_path:
+        return False
+    if ffmpeg_path not in _mpeg2_known:
+        _mpeg2_known[ffmpeg_path] = _can_run(ffmpeg_path, MPEG2)
+    return _mpeg2_known[ffmpeg_path]
+
+
+_mpeg2_refresh_known: dict[str, bool] = {}
+
+
+def mpeg2_can_refresh(ffmpeg_path: str) -> bool:
+    """Whether this ffmpeg's MPEG-2 encoder has our -intra_refresh (stock ffmpeg refuses the whole command
+    line over an option it lacks, so it is asked first, once)."""
+    if not ffmpeg_path:
+        return False
+    if ffmpeg_path not in _mpeg2_refresh_known:
+        text = b""
+        try:
+            probe = childproc.popen([ffmpeg_path, "-hide_banner", "-h", "encoder=mpeg2video"],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                help_bytes, _err = probe.communicate(timeout=PROBE_TIMEOUT_S)
+                if probe.returncode == 0:
+                    text = help_bytes
+            except subprocess.TimeoutExpired:
+                probe.kill()
+                probe.communicate()
+        except OSError:
+            pass
+        _mpeg2_refresh_known[ffmpeg_path] = b"-intra_refresh" in text
+    return _mpeg2_refresh_known[ffmpeg_path]
+
+
+def mpeg2_encoder(ffmpeg_path: str) -> VideoEncoder:
+    """The MPEG-2 encoder this ffmpeg can run: with intra refresh when it has the option."""
+    return MPEG2_REFRESH if mpeg2_can_refresh(ffmpeg_path) else MPEG2
+
+
 def detect_available(ffmpeg_path: str) -> list[VideoEncoder]:
     available = [encoder for encoder in LADDER if _can_run(ffmpeg_path, encoder)]
     log.write("encoders: none of them works on this PC" if not available
@@ -96,6 +156,46 @@ def _can_run(ffmpeg_path: str, encoder: VideoEncoder) -> bool:
     error_text = error_bytes.decode("utf-8", "replace")
     log.write(_("encoders: %s not available%s") % (encoder.name, _describe_probe_failure(error_text)))
     return False
+
+
+# per ffmpeg binary: its h264_nvenc option list, asked for once - it cannot change while the binary stays
+_nvenc_help_known: dict[str, bytes] = {}
+
+
+def _nvenc_help(ffmpeg_path: str) -> bytes:
+    """What "ffmpeg -h encoder=h264_nvenc" prints, or nothing when that ffmpeg cannot be asked."""
+    if not ffmpeg_path:
+        return b""
+    if ffmpeg_path in _nvenc_help_known:
+        return _nvenc_help_known[ffmpeg_path]
+    text = b""
+    try:
+        probe = childproc.popen([ffmpeg_path, "-hide_banner", "-h", "encoder=h264_nvenc"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        help_bytes, _err = probe.communicate(timeout=PROBE_TIMEOUT_S)
+        if probe.returncode == 0:
+            text = help_bytes
+    except subprocess.TimeoutExpired:
+        probe.kill()
+        probe.communicate()
+    except OSError:
+        pass
+    _nvenc_help_known[ffmpeg_path] = text
+    return text
+
+
+def nvenc_can_skip_deblocking(ffmpeg_path: str) -> bool:
+    """Whether this ffmpeg can tell NVENC to leave the deblocking filter out (see protocol.NVENC_DEBLOCKING).
+
+    Stock ffmpeg cannot, and it does not ignore an option it lacks - it refuses the whole command line. So
+    "off" is only ever passed to an ffmpeg that lists -dblk_idc under h264_nvenc's options."""
+    return b"-dblk_idc" in _nvenc_help(ffmpeg_path)
+
+
+def nvenc_can_use_whole_pixels(ffmpeg_path: str) -> bool:
+    """Whether this ffmpeg can hold NVENC's motion vectors to whole pixels (see protocol.NVENC_MOTION) -
+    the same story as the deblocking switch: NVENC has it, stock ffmpeg never passes it on."""
+    return b"-mv_precision" in _nvenc_help(ffmpeg_path)
 
 
 # ffmpeg's boilerplate trailer ("nothing was written", "conversion failed") hides the real cause, which
@@ -251,12 +351,16 @@ def _coder_args(entropy_coder: str) -> list[str]:
 
 def build_ffmpeg_args(ffmpeg_path: str, encoder: VideoEncoder, capture_input_args: list[str], width: int, height: int,
                       fps: int, kbps: int, loss_recovery: str, capture_needs_scale: bool,
-                      entropy_coder: str = "auto", rate_control: str = "vbr", slices: int = 1) -> list[str]:
+                      entropy_coder: str = "auto", rate_control: str = "vbr", slices: int = 1,
+                      nvenc_deblocking_off: bool = False, nvenc_whole_pixels: bool = False) -> list[str]:
     """The whole ffmpeg command line: capture input in, raw Annex-B H.264 out on stdout.
 
     A raw-pipe capture (Portal/PipeWire, test source) already delivers I420/bt709/limited at the output
     size, so it needs no filter; x11grab delivers the desktop at its own size and colour, so that one is
     scaled and converted here (capture_needs_scale).
+
+    nvenc_deblocking_off and nvenc_whole_pixels are only for an ffmpeg that nvenc_can_skip_deblocking() /
+    nvenc_can_use_whole_pixels() said yes to; the other rungs ignore them.
     """
     intra = intra_refresh_enabled(encoder, loss_recovery)
     args = [ffmpeg_path, "-hide_banner", "-loglevel", "warning"]
@@ -300,7 +404,48 @@ def build_ffmpeg_args(ffmpeg_path: str, encoder: VideoEncoder, capture_input_arg
         else:
             args += _gop_args(protocol.KEYFRAME_INTERVAL_SECONDS, fps)
         args += ["-color_range", "tv", "-colorspace", "bt709", "-forced-idr", "1"]
+        if nvenc_deblocking_off:
+            # disable_deblocking_filter_idc = 1 in every slice. NVENC then also reconstructs its own
+            # references unfiltered, so the decoder does not drift (measured, see protocol.NVENC_DEBLOCKING).
+            args += ["-dblk_idc", "1"]
+        if nvenc_whole_pixels:
+            # every motion vector on a whole pixel: the PS3 copies blocks instead of interpolating them
+            # (measured, see protocol.NVENC_MOTION)
+            args += ["-mv_precision", "fullpel"]
         args += _OUTPUT
+        return args
+
+    if encoder.kind == "mpeg2":
+        args += capture_input_args
+        # MPEG-2 has no cropping: a 1080-row picture is coded as 1088 rows, and whether cellVdec then hands
+        # back 1080 or 1088 decides where the console finds the colour planes - guess wrong and the picture
+        # turns to coloured noise. So the picture is made 1088 rows here (8 black rows at the bottom) and
+        # the question never comes up. Every other size on offer is already a multiple of 16.
+        padded_height = (height + 15) // 16 * 16
+        filters = [_scale_filter(width, height, "yuv420p")] if capture_needs_scale else []
+        if padded_height != height:
+            filters.append("pad=%d:%d:0:0:black" % (width, padded_height))
+        if filters:
+            args += ["-vf", ",".join(filters)]
+        # no B-frames and low_delay: the decoder may show each picture the moment it is complete. intra_vlc is
+        # MPEG-2's own quality tool for intra blocks and costs the decoder nothing extra. (non_linear_quant
+        # would be another, but ffmpeg only takes it with -qmax 28 or less, and it pays off at low bitrates
+        # - this stream runs at high ones.) MPEG-2 already cuts every macroblock row into a slice, so slice
+        # threads add no frame of latency. "quality" has no MPEG-2 form (no -crf): it runs as VBR, as on NVENC.
+        args += ["-c:v", "mpeg2video", "-pix_fmt", "yuv420p", "-threads", "4",
+                 "-flags", "+low_delay", "-intra_vlc", "1"]
+        args += _rate_args(kbps, "cbr" if rate_control == "cbr" else "vbr")
+        if intra:
+            # one I-picture at the start and then none: -g pushes the next one an hour out, and the scene-change
+            # detector - which would otherwise turn any big change into a whole I-picture - is switched off.
+            # The sweep repairs everything instead, in REFRESH_SWEEP_SECONDS as on the H.264 rungs.
+            args += _gop_args(protocol.ANCHOR_KEYFRAME_SECONDS, fps)
+            args += ["-sc_threshold", "1000000000",
+                     "-intra_refresh", str(max(1, round(protocol.REFRESH_SWEEP_SECONDS * max(1, fps))))]
+        else:
+            args += _gop_args(protocol.KEYFRAME_INTERVAL_SECONDS, fps)
+        args += ["-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
+        args += _MPEG2_OUTPUT
         return args
 
     if encoder.kind == "amf":

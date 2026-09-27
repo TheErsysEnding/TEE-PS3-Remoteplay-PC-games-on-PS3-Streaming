@@ -395,6 +395,34 @@ class LiveStreamerTests(unittest.TestCase):
             time.sleep(0.02)
         self.fail("ffmpeg wurde nicht gestartet. Log:\n" + log.get_recent())
 
+    # (3b) the same path with the MPEG-2 test codec: what the console gets must be MPEG-2 pictures, one per
+    # frame id, with the keyframe flag on exactly the ones that open with a sequence header
+    def test_streams_mpeg2_to_a_udp_receiver(self):
+        if not encoders.mpeg2_available(FFMPEG):
+            self.skipTest("ffmpeg ohne MPEG-2")
+        streamer = self._make([encoders.MPEG2])
+        texts, frames = [], Reassembler()
+        streamer.start(self.target)
+        try:
+            self.assertIsNotNone(self._collect(10.0, frames, texts, stop_at_first_vf=True),
+                                 "kein VF-Fragment innerhalb 10 s. Log:\n" + log.get_recent())
+            self.assertEqual(texts[:3], ["SINFO 1280 720 42 1 60 0 mpeg2"] * 3,
+                             "MPEG-2 kuendigt sich an, und zwar mit Keyframes statt Intra Refresh")
+            self._collect(2.0, frames, texts)
+        finally:
+            streamer.stop()
+        pictures = [(keyframe, data) for _id, keyframe, data, *_ in frames.frames]
+        self.assertGreater(len(pictures), 60, "zu wenige Bilder in 2 s")
+        for keyframe, data in pictures:
+            self.assertTrue(data.startswith(b"\x00\x00\x01\xb3" if keyframe else b"\x00\x00\x01\x00"),
+                            (keyframe, data[:4].hex()))
+        self.assertTrue(pictures[0][0], "das erste Bild muss ein Schluesselbild sein")
+        self.assertGreaterEqual(sum(1 for keyframe, _ in pictures if keyframe), 3)
+        stream = b"".join(data for _keyframe, data in pictures)
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,width,height",
+                                "-of", "csv=p=0", "-"], input=stream, capture_output=True)
+        self.assertEqual(b"mpeg2video,1280,720", probe.stdout.strip().rstrip(b","))
+
     # (3) the whole path, 3 seconds of 720p60
     def test_streams_three_seconds_to_a_udp_receiver(self):
         streamer = self._make([self.best])
@@ -997,6 +1025,60 @@ class AnnouncedLevel(unittest.TestCase):
         streamer._stream_fps = None          # _level_for asks _current_fps for the rate it announces
         self.assertEqual(42, streamer._level_for(1920, 1088))
         self.assertEqual(51, streamer._level_for(2560, 1440))
+
+
+class DeblockingAnnouncementTests(unittest.TestCase):
+    """With NVENC's deblocking filter off, SINFO names the variant, so the console's stats panel and every
+    session log say which one ran. Needs no ffmpeg: the probe is replaced and nothing is started."""
+
+    def setUp(self):
+        self.receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.receiver.bind(("127.0.0.1", 0))
+        self.receiver.settimeout(1.0)
+        self.sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.addCleanup(self.receiver.close)
+        self.addCleanup(self.sender.close)
+        original = encoders.nvenc_can_skip_deblocking
+        self.can_skip = True
+        encoders.nvenc_can_skip_deblocking = lambda path: self.can_skip
+        self.addCleanup(setattr, encoders, "nvenc_can_skip_deblocking", original)
+        original_whole = encoders.nvenc_can_use_whole_pixels
+        self.can_whole = True
+        encoders.nvenc_can_use_whole_pixels = lambda path: self.can_whole
+        self.addCleanup(setattr, encoders, "nvenc_can_use_whole_pixels", original_whole)
+
+    def _word(self, encoder_kind, deblocking, motion="quarter"):
+        chosen = [e for e in encoders.LADDER if e.kind == encoder_kind]
+        streamer = LiveStreamer(self.sender, "ffmpeg", 60, protocol.KBPS, 1280, 720, protocol.SEND_RATE_KBPS,
+                                lambda *a: None, lambda: list(chosen), lambda: "intra", lambda *a: None,
+                                nvenc_deblocking=lambda: deblocking, nvenc_motion=lambda: motion)
+        streamer.send_stream_info(self.receiver.getsockname())
+        # SINFO goes out three times (against loss): read all three, so the next call starts clean
+        words = {self.receiver.recv(256).split()[-1] for _ in range(3)}
+        self.assertEqual(1, len(words), words)
+        return words.pop()
+
+    def test_off_renames_nvenc(self):
+        self.assertEqual(protocol.NVENC_NO_DEBLOCK_NAME.encode(), self._word("nvenc", "off"))
+
+    def test_on_keeps_the_plain_name(self):
+        self.assertEqual(b"nvenc", self._word("nvenc", "on"))
+
+    def test_an_ffmpeg_without_the_switch_keeps_the_plain_name(self):
+        self.can_skip = False
+        self.assertEqual(b"nvenc", self._word("nvenc", "off"))
+
+    def test_other_encoders_are_never_renamed(self):
+        self.assertEqual(b"x264", self._word("x264", "off"))
+        self.assertEqual(b"x264", self._word("x264", "off", "whole"))
+
+    def test_whole_pixels_are_named_too(self):
+        self.assertEqual(b"nvenc-fpel", self._word("nvenc", "on", "whole"))
+        self.assertEqual(b"nvenc-nodb-fpel", self._word("nvenc", "off", "whole"))
+
+    def test_an_ffmpeg_without_whole_pixels_keeps_that_part_out_of_the_name(self):
+        self.can_whole = False
+        self.assertEqual(protocol.NVENC_NO_DEBLOCK_NAME.encode(), self._word("nvenc", "off", "whole"))
 
 
 if __name__ == "__main__":

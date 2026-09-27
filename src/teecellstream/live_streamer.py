@@ -18,7 +18,7 @@ import time
 
 from . import childproc, encoders, log, protocol
 from .clock import now_us
-from .stream_sender import AnnexBSplitter, send_access_unit
+from .stream_sender import AnnexBSplitter, Mpeg2Splitter, send_access_unit
 from .i18n import _
 
 FIRST_FRAME_TIMEOUT_S = 5.0
@@ -64,7 +64,8 @@ class LiveStreamer:
     # burst overruns it and the picture freezes until the next one.
     def __init__(self, sock, ffmpeg_path, fps, kbps, width, height, send_rate_kbps, create_capture,
                  encoders_to_try, loss_recovery, on_all_encoders_failed, video_kbps=None, entropy_coder=None,
-                 stream_size=None, rate_control=None, slice_count=None, stream_fps=None):
+                 stream_size=None, rate_control=None, slice_count=None, stream_fps=None, nvenc_deblocking=None,
+                 nvenc_motion=None):
         self._sock = sock
         self._ffmpeg_path = ffmpeg_path
         self._fps = fps
@@ -81,6 +82,8 @@ class LiveStreamer:
         # effect on the next connect without restarting the server. None keeps the constructor's value.
         self._video_kbps = video_kbps
         self._entropy_coder = entropy_coder
+        self._nvenc_deblocking = nvenc_deblocking
+        self._nvenc_motion = nvenc_motion
         self._stream_size = stream_size
         self._rate_control = rate_control
         self._slice_count = slice_count
@@ -97,6 +100,7 @@ class LiveStreamer:
 
         self._gate = threading.RLock()          # start() and stop() against each other
         self._session: _Session | None = None
+        self._pace_reports = 0
         self._pump_thread: threading.Thread | None = None
         self._failed_starts = 0
 
@@ -134,6 +138,24 @@ class LiveStreamer:
         """"cavlc", "cabac", or "auto" (the encoder's own default) - anything else counts as "auto"."""
         chosen = self._entropy_coder() if callable(self._entropy_coder) else self._entropy_coder
         return chosen if chosen in protocol.ENTROPY_CODERS else "auto"
+
+    def _nvenc_deblocking_wanted_off(self) -> bool:
+        chosen = self._nvenc_deblocking() if callable(self._nvenc_deblocking) else self._nvenc_deblocking
+        return chosen == "off"
+
+    def _nvenc_deblocking_off(self) -> bool:
+        """The filter comes off only when the user asked for it AND this ffmpeg can pass it on (see
+        protocol.NVENC_DEBLOCKING). An ffmpeg without -dblk_idc keeps the filter: it would refuse the
+        option outright, and a stream with the filter beats no stream."""
+        return self._nvenc_deblocking_wanted_off() and encoders.nvenc_can_skip_deblocking(self._ffmpeg_path)
+
+    def _nvenc_whole_pixels_wanted(self) -> bool:
+        chosen = self._nvenc_motion() if callable(self._nvenc_motion) else self._nvenc_motion
+        return chosen == "whole"
+
+    def _nvenc_whole_pixels(self) -> bool:
+        """Same rule as the filter: only when asked for AND this ffmpeg can pass it on (protocol.NVENC_MOTION)."""
+        return self._nvenc_whole_pixels_wanted() and encoders.nvenc_can_use_whole_pixels(self._ffmpeg_path)
 
     def _level_for(self, width: int, height: int) -> int:
         """The H.264 level to announce for this picture size, never below the 4.2 the console was proven
@@ -183,6 +205,20 @@ class LiveStreamer:
         session = self._session
         return session is not None and session.active and session.target == target
 
+    def pace(self, period_s: float, error_s: float) -> None:
+        """A PACE report from the console (protocol.PACE_GAIN): hand the capture its refresh and a phase step."""
+        session = self._session
+        capture = session.capture if session is not None and session.active else None
+        if capture is None:
+            return
+        step = max(-protocol.PACE_MAX_STEP_S, min(protocol.PACE_MAX_STEP_S, protocol.PACE_GAIN * error_s))
+        capture.set_display_clock(period_s, step)
+        self._pace_reports += 1
+        if self._pace_reports == 1:
+            log.write(_("live: pacing to the PS3's display: %.3f Hz") % (1.0 / period_s))
+        elif self._pace_reports % 120 == 0:   # every ~minute: is it still holding?
+            log.write(_("live: display lock: %.3f Hz, pictures %+.1f ms from the target") % (1.0 / period_s, error_s * 1000))
+
     def reset_failures(self) -> None:
         self._failed_starts = 0
 
@@ -195,6 +231,7 @@ class LiveStreamer:
             width, height = self._current_size()
             session = _Session(target, self._announced_intra(), width, height)
             self._session = session
+            self._pace_reports = 0
             self.send_stream_info(target)   # answer the PS3 straight away: bringing an encoder up can take seconds
             self._pump_thread = threading.Thread(target=self._run_pump, args=(session,), name="live-pump", daemon=True)
             self._pump_thread.start()
@@ -227,6 +264,8 @@ class LiveStreamer:
             intra = self._announced_intra()
             width, height = self._current_size()
             kind = self._announced_kind()
+        if kind == "nvenc":   # so every session log on the console names the variant
+            kind = protocol.nvenc_variant_name(self._nvenc_deblocking_off(), self._nvenc_whole_pixels())
         # The trailing encoder name is an extension. The PS3's parser reads six numbers and stops, so an
         # older console ignores it; a newer console shows "-" when an older server leaves it out.
         info = ("SINFO %d %d %d %d %d %d %s" % (width, height, self._level_for(width, height), protocol.SINFO_REFS,
@@ -366,11 +405,22 @@ class LiveStreamer:
         input_args = list(capture.ffmpeg_input_args())
         raw_pipe = "pipe:0" in input_args
         loss_recovery = "intra" if session.intra else "keyframe"   # what SINFO promised, whatever rung this is
+        deblocking_off = False
+        if encoder.kind == "nvenc" and self._nvenc_deblocking_wanted_off():
+            deblocking_off = self._nvenc_deblocking_off()
+            log.write(_("live: NVENC without the deblocking filter (-dblk_idc 1)") if deblocking_off
+                      else _("live: NVENC keeps the deblocking filter - this ffmpeg has no -dblk_idc option"))
+        whole_pixels = False
+        if encoder.kind == "nvenc" and self._nvenc_whole_pixels_wanted():
+            whole_pixels = self._nvenc_whole_pixels()
+            log.write(_("live: NVENC with whole-pixel motion vectors (-mv_precision fullpel)") if whole_pixels
+                      else _("live: NVENC keeps quarter-pixel motion vectors - this ffmpeg has no -mv_precision option"))
         try:
             args = encoders.build_ffmpeg_args(self._ffmpeg_path, encoder, input_args, session.width, session.height,
                                               self._current_fps(session.width, session.height), self._current_kbps(), loss_recovery, capture.needs_scale,
                                               self._current_entropy_coder(), self._current_rate_control(),
-                                              self._current_slice_count())
+                                              self._current_slice_count(), nvenc_deblocking_off=deblocking_off,
+                                              nvenc_whole_pixels=whole_pixels)
             process = _spawn_ffmpeg(args, raw_pipe)
         except (OSError, ValueError) as error:
             log.write(_("live: ffmpeg does not start: %s") % error)
@@ -437,7 +487,7 @@ class LiveStreamer:
         timeout_thread = threading.Thread(target=first_frame_watchdog, name="live-first-frame", daemon=True)
         timeout_thread.start()
 
-        splitter = AnnexBSplitter()
+        splitter = Mpeg2Splitter() if encoder.kind == "mpeg2" else AnnexBSplitter()
         frame_id = 0
         send_rate_kbps = self._current_send_rate_kbps()   # fixed for this session, like the encoder settings
         send_error_logged = False

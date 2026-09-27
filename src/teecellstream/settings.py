@@ -15,6 +15,9 @@ DEFAULTS = {
     "video_kbps": 6000,                    # video bitrate; the PS3's decoder, not the link, is the limit
     "stream_size": "1280x720",             # what the PS3 gets; the larger sizes cost the SPU decoder roughly in proportion
     "entropy_coder": "cavlc",              # "cavlc" (cheap for the PS3 to decode) | "cabac" (the Windows original)
+    "nvenc_deblocking": "on",              # "on" | "off"; "off" needs an ffmpeg with -dblk_idc (protocol.NVENC_DEBLOCKING)
+    "nvenc_motion": "quarter",             # "quarter" | "whole"; "whole" needs an ffmpeg with -mv_precision (protocol.NVENC_MOTION)
+    "video_codec": "h264",                 # "h264" | "mpeg2" (test; only for a console that asks for it - protocol.VIDEO_CODECS)
     "switch_display_mode": True,           # switch the desktop to the streaming resolution while streaming
     "swap_mouse_sticks": False,            # mouse mode: right stick moves the pointer
     "custom_commands": None,               # list of 4 {"kind","value","label"}; None = not yet seeded

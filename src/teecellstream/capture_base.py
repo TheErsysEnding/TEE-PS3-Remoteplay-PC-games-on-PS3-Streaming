@@ -34,6 +34,10 @@ class ScreenCapture:
     def stop(self) -> None:
         pass
 
+    def set_display_clock(self, period_s: float, nudge_s: float) -> None:
+        """The console's display lock (protocol.PACE_GAIN): run the frame grid at period_s and move it by nudge_s
+        once. Only a backend that paces the pictures itself can follow it; the others ignore it."""
+
     def transient_failure(self, ffmpeg_error: str) -> bool:
         """True when a start that produced no frames looks like a source that was merely BUSY, so the same
         attempt is worth repeating. A wrong resolution or a missing device must answer False: retrying

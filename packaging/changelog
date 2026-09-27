@@ -1,3 +1,20 @@
+tee-cell-stream-server (1:1.1.0) unstable; urgency=medium
+
+  * Bildschirm-Takt-Kopplung: mit Vsync meldet die PS3 zweimal pro Sekunde,
+    wie weit ihre Bilder vom Bildwechsel des Fernsehers entfernt sind; der
+    Server sendet dann im Takt des Fernsehers (59,94 Hz) statt des Monitors.
+    Latenz mit Vsync gemessen ~72 ms -> ~40 ms.
+  * MPEG-2 als Test-Codec (nur fuer eine PS3-App ab 1.1.0, die danach fragt),
+    mit Intra-Refresh, wenn das ffmpeg die Option -intra_refresh kennt.
+  * NVENC: Schalter fuer Deblocking-Filter aus und Bewegungsvektoren auf
+    ganzen Pixeln (brauchen ein ffmpeg mit -dblk_idc / -mv_precision).
+  * PKG 1.1.0: zeigt Codec, Deblocking und CAVLC/CABAC in den Statistiken,
+    Takt-Kopplung, hoechstens ein Bildwechsel voraus bei Vsync, neue
+    Aufteilung der Controls-Seite, der GitHub-Link wird nicht mehr
+    abgeschnitten, XMB-Bilder zeigen V1.1.
+
+ -- TEE <github@teebug.de>  Sun, 27 Sep 2026 20:09:05 +0200
+
 tee-cell-stream-server (1:1.0.1) unstable; urgency=medium
 
   * Windows-Server: eigene Fassung mit Fenster (Qt, Windows-11-Stil, Dark

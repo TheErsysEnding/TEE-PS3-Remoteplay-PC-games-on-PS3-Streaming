@@ -184,6 +184,52 @@ add_translations({
         "video: erst den Stream beenden, dann die Ratensteuerung wechseln",
     "video: end the stream first, then change the slice count":
         "video: erst den Stream beenden, dann die Slice-Zahl wechseln",
+    "video: end the stream first, then change the deblocking filter":
+        "video: erst den Stream beenden, dann den Deblocking-Filter umstellen",
+    "video: NVENC deblocking filter from the next stream on: %s":
+        "video: NVENC-Deblocking-Filter ab dem nächsten Stream: %s",
+    "live: NVENC without the deblocking filter (-dblk_idc 1)":
+        "live: NVENC ohne Deblocking-Filter (-dblk_idc 1)",
+    "live: NVENC keeps the deblocking filter - this ffmpeg has no -dblk_idc option":
+        "live: NVENC behält den Deblocking-Filter – dieses ffmpeg kennt -dblk_idc nicht",
+    "NVENC deblocking filter": "NVENC-Deblocking-Filter",
+    "On": "An",
+    "Off": "Aus",
+    "The PS3 runs the filter on every picture – the largest single decode cost measured on the console":
+        "Die PS3 rechnet den Filter bei jedem Bild – der größte einzelne Posten, der auf der Konsole gemessen wurde",
+    "NVENC leaves the filter out – less work for the PS3, slightly blockier edges at low bitrates":
+        "NVENC lässt den Filter weg – weniger Arbeit für die PS3, bei niedriger Bitrate etwas blockigere Kanten",
+    "Needs an ffmpeg with the -dblk_idc option (see ffmpeg-nvenc) – this one keeps the filter":
+        "Braucht ein ffmpeg mit der Option -dblk_idc (siehe ffmpeg-nvenc) – dieses behält den Filter",
+    "Codec": "Codec",
+    "MPEG-2 (test)": "MPEG-2 (Test)",
+    "What every version of the PS3 app decodes": "Was jede Version der PS3-App decodiert",
+    "Test: simpler for the PS3 to decode, needs about twice the bitrate. Only an app from "
+    "V1.1.0 on asks for it – any other gets H.264":
+        "Test: für die PS3 einfacher zu decodieren, braucht etwa die doppelte Bitrate. Nur eine App ab "
+        "V1.1.0 fragt danach – jede andere bekommt H.264",
+    "video: end the stream first, then change the codec": "video: erst den Stream beenden, dann den Codec wechseln",
+    "video: codec from the next stream on: %s": "video: Codec ab dem nächsten Stream: %s",
+    "video: MPEG-2 test stream": "video: MPEG-2-Teststream",
+    "video: MPEG-2 is set, but this PS3 app cannot decode it - sending H.264":
+        "video: MPEG-2 ist eingestellt, aber diese PS3-App kann es nicht decodieren – es geht H.264 raus",
+    "NVENC motion vectors": "NVENC-Bewegungsvektoren",
+    "Quarter pixel": "Viertelpixel",
+    "Whole pixels": "Ganze Pixel",
+    "NVENC's own choice – the PS3 has to interpolate every block that points between pixels":
+        "Was NVENC selbst wählt – die PS3 muss jeden Block zwischen zwei Pixeln erst ausrechnen",
+    "Every motion vector on a whole pixel – the PS3 copies instead of interpolating":
+        "Jeder Bewegungsvektor auf einem ganzen Pixel – die PS3 kopiert nur, statt zu rechnen",
+    "Needs an ffmpeg with the -mv_precision option (see ffmpeg-nvenc) – this one keeps quarter pixels":
+        "Braucht ein ffmpeg mit der Option -mv_precision (siehe ffmpeg-nvenc) – dieses bleibt bei Viertelpixeln",
+    "video: end the stream first, then change the motion vectors":
+        "video: erst den Stream beenden, dann die Bewegungsvektoren umstellen",
+    "video: NVENC motion vectors from the next stream on: %s":
+        "video: NVENC-Bewegungsvektoren ab dem nächsten Stream: %s",
+    "live: NVENC with whole-pixel motion vectors (-mv_precision fullpel)":
+        "live: NVENC mit Bewegungsvektoren auf ganzen Pixeln (-mv_precision fullpel)",
+    "live: NVENC keeps quarter-pixel motion vectors - this ffmpeg has no -mv_precision option":
+        "live: NVENC bleibt bei Viertelpixeln – dieses ffmpeg kennt -mv_precision nicht",
     "No, switch back": "Nein, zurückschalten",
     "display: picture confirmed, the new resolution stays":
         "display: Bild bestätigt, die neue Auflösung bleibt",
@@ -234,6 +280,21 @@ def bitrate_labels() -> tuple[str, ...]:
 FPS_HINT = ("The PS3 shows 59.94 pictures a second. 30 and 60 land evenly on that, "
             "50 and 55 do not – they buy the console time per picture instead")
 BITRATE_HINT = "Lower it when the picture judders on the PS3 – raise it only while it stays fluid"
+
+DEBLOCK_LABELS = ("On", "Off")                     # in protocol.NVENC_DEBLOCKING order
+DEBLOCK_HINTS = ("The PS3 runs the filter on every picture – the largest single decode cost measured on the console",
+                 "NVENC leaves the filter out – less work for the PS3, slightly blockier edges at low bitrates")
+DEBLOCK_UNAVAILABLE_HINT = "Needs an ffmpeg with the -dblk_idc option (see ffmpeg-nvenc) – this one keeps the filter"
+
+CODEC_LABELS = ("H.264", "MPEG-2 (test)")           # in protocol.VIDEO_CODECS order
+CODEC_HINTS = ("What every version of the PS3 app decodes",
+               "Test: simpler for the PS3 to decode, needs about twice the bitrate. Only an app from "
+               "V1.1.0 on asks for it – any other gets H.264")
+
+MOTION_LABELS = ("Quarter pixel", "Whole pixels")    # in protocol.NVENC_MOTION order
+MOTION_HINTS = ("NVENC's own choice – the PS3 has to interpolate every block that points between pixels",
+                "Every motion vector on a whole pixel – the PS3 copies instead of interpolating")
+MOTION_UNAVAILABLE_HINT = "Needs an ffmpeg with the -mv_precision option (see ffmpeg-nvenc) – this one keeps quarter pixels"
 
 ENTROPY_LABELS = ("CAVLC", "CABAC")
 ENTROPY_HINTS = ("The PS3 decodes CAVLC about 43 % faster – measured 22 ms instead of 36–40 ms at 720p",

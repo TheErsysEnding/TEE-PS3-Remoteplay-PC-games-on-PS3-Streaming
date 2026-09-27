@@ -48,6 +48,9 @@ class Server:
         self.is_armed = False
         self.trip_reason: str | None = None
         self.connected_ps3: str | None = None
+        # what the console's app said it can decode, from its PLAY ("PLAY mpeg2"). An app before V1.1.0
+        # says nothing and gets H.264 whatever the codec setting is (protocol.VIDEO_CODECS).
+        self.ps3_can_mpeg2 = False
         self.available_encoders: list[encoders.VideoEncoder] = []
         self._chosen_encoder: encoders.VideoEncoder | None = None
         self.ffmpeg_path = "ffmpeg"
@@ -85,7 +88,9 @@ class Server:
             lambda: self.loss_recovery, self._on_all_encoders_failed,
             lambda: self.video_kbps, lambda: self.entropy_coder, lambda: self.stream_size,
             lambda: self.rate_control, lambda: self.slice_count,
-            stream_fps=lambda: self.stream_fps)   # read per stream, like the bitrate
+            stream_fps=lambda: self.stream_fps,   # read per stream, like the bitrate
+            nvenc_deblocking=lambda: self.nvenc_deblocking,
+            nvenc_motion=lambda: self.nvenc_motion)
         # the same resolved binary the video uses (and the one the "ready:" line names): audio must not
         # fall back to a bare "ffmpeg" off PATH while video runs an absolute path
         self.audio_streamer = AudioStreamer(self.sock, self.ffmpeg_path)   # desktop sound goes with the desktop picture
@@ -240,7 +245,25 @@ class Server:
         if self._chosen_encoder is not None:
             order.append(self._chosen_encoder)
         order.extend(encoder for encoder in self.available_encoders if encoder is not self._chosen_encoder)
+        # MPEG-2 goes in front only for a console that asked for it; the H.264 ladder stays behind it as the
+        # fallback. The console builds its decoder from the first picture it receives and reads the codec
+        # from the bytes, so a rung that fails before sending one can hand over without a new handshake.
+        if self.video_codec == "mpeg2" and self.ps3_can_mpeg2 and encoders.mpeg2_available(self.ffmpeg_path):
+            order.insert(0, encoders.mpeg2_encoder(self.ffmpeg_path))
         return order
+
+    @property
+    def video_codec(self) -> str:
+        """"h264", or "mpeg2" as a test for a console that can decode it - see protocol.VIDEO_CODECS."""
+        value = settings.get("video_codec", "h264")
+        return value if value in protocol.VIDEO_CODECS else "h264"
+
+    @video_codec.setter
+    def video_codec(self, value: str) -> None:
+        if value not in protocol.VIDEO_CODECS or value == self.video_codec:
+            return
+        settings.set("video_codec", value)
+        log.write(_("video: codec from the next stream on: %s") % ("MPEG-2" if value == "mpeg2" else "H.264"))
 
     @property
     def loss_recovery(self) -> str:
@@ -320,6 +343,44 @@ class Server:
             return
         settings.set("entropy_coder", value)
         log.write("video: entropy coder from the next stream on: " + value.upper())
+
+    @property
+    def nvenc_deblocking(self) -> str:
+        """Whether NVENC runs H.264's deblocking filter ("on") or leaves it out ("off"). "off" only takes
+        effect with an ffmpeg that can pass it on - see protocol.NVENC_DEBLOCKING."""
+        value = settings.get("nvenc_deblocking", "on")
+        return value if value in protocol.NVENC_DEBLOCKING else "on"
+
+    @nvenc_deblocking.setter
+    def nvenc_deblocking(self, value: str) -> None:
+        if value not in protocol.NVENC_DEBLOCKING or value == self.nvenc_deblocking:
+            return
+        settings.set("nvenc_deblocking", value)
+        log.write(_("video: NVENC deblocking filter from the next stream on: %s") % value)
+
+    @property
+    def nvenc_motion(self) -> str:
+        """Where NVENC may point a motion vector: "quarter" pixels (its own choice) or only "whole" ones, which
+        the PS3 copies instead of interpolating. "whole" needs a capable ffmpeg - see protocol.NVENC_MOTION."""
+        value = settings.get("nvenc_motion", "quarter")
+        return value if value in protocol.NVENC_MOTION else "quarter"
+
+    @nvenc_motion.setter
+    def nvenc_motion(self, value: str) -> None:
+        if value not in protocol.NVENC_MOTION or value == self.nvenc_motion:
+            return
+        settings.set("nvenc_motion", value)
+        log.write(_("video: NVENC motion vectors from the next stream on: %s") % value)
+
+    @property
+    def nvenc_can_use_whole_pixels(self) -> bool:
+        return encoders.nvenc_can_use_whole_pixels(self.ffmpeg_path)
+
+    @property
+    def nvenc_can_skip_deblocking(self) -> bool:
+        """Whether the ffmpeg this server runs can switch the filter off at all (the window greys the
+        choice out when it cannot)."""
+        return encoders.nvenc_can_skip_deblocking(self.ffmpeg_path)
 
     @property
     def rate_control(self) -> str:
@@ -465,6 +526,10 @@ class Server:
             with self.stream_lock:   # don't let a watchdog stop interleave with bringing a stream up
                 if not self.is_ps3_connected:
                     self._session_started = time.monotonic()   # a fresh session: the give-up clock starts here
+                    self.ps3_can_mpeg2 = protocol.PLAY_CAPABILITY_MPEG2 in protocol.play_capabilities(text)
+                    if self.video_codec == "mpeg2":
+                        log.write(_("video: MPEG-2 test stream") if self.ps3_can_mpeg2
+                                  else _("video: MPEG-2 is set, but this PS3 app cannot decode it - sending H.264"))
                 self._restore_due = None   # back within the window: keep the mode instead of switching again
                 self.connected_ps3 = sender[0]
                 # the desktop must be at the streaming size BEFORE the capture starts
@@ -477,6 +542,10 @@ class Server:
                     self.display_mode.match_for_capture(*self.stream_size, self.stream_fps, strategy)
                 self.live_streamer.start(sender)     # repeat PLAYs are ignored inside
                 self.audio_streamer.start(sender)
+        elif text.startswith("PACE "):
+            pace = protocol.parse_pace(text)
+            if pace is not None:
+                self.live_streamer.pace(*pace)
         elif text.startswith("PADMODE "):
             self.pad_receiver.set_gamepad_mode(text[8:].startswith("gamepad"))
         elif text.startswith("KEY ") and len(packet) >= 5:
