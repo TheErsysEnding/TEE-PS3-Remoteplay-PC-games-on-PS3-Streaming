@@ -33,11 +33,13 @@ from . import (APP_NAME, DONATE_HEADLINE, DONATE_PITCH, LINK_DONATE, LINK_GITHUB
 from .display_choose import CONFIRM_SECONDS, DISPLAY_STRATEGIES
 from .i18n import _, available_languages, language, off_language_changed, on_language_changed, set_language
 from .settings import settings
-from .ui_text import (BITRATE_HINT, COMMAND_KINDS, COMMAND_KIND_LABELS, COMMANDS_INTRO, DISPLAY_HINTS, DISPLAY_LABELS,
-                      ENTROPY_HINTS, ENTROPY_LABELS, HIDE_HINT, LANGUAGE_CODES, LANGUAGE_LABELS,
+from .ui_text import (BITRATE_HINT, CODEC_HINTS, CODEC_LABELS, COMMAND_KINDS, COMMAND_KIND_LABELS, COMMANDS_INTRO,
+                      DEBLOCK_HINTS, DEBLOCK_LABELS, DEBLOCK_UNAVAILABLE_HINT, DISPLAY_HINTS, DISPLAY_LABELS,
+                      MOTION_HINTS, MOTION_LABELS, MOTION_UNAVAILABLE_HINT, ENTROPY_HINTS, ENTROPY_LABELS,
+                      HIDE_HINT, LANGUAGE_CODES, LANGUAGE_LABELS,
                       FPS_HINT, LOSS_RECOVERY_HINTS, LOSS_RECOVERY_KINDS, LOSS_RECOVERY_LABELS, RATE_HINTS,
                       RATE_LABELS, SLICE_HINTS, SLICE_LABELS, bitrate_labels, fps_labels, size_hints,
-                      size_labels, source_rate_text, status_text)
+                      size_labels, source_rate_text, status_text, nvenc_switch_hint)
 
 REFRESH_TICK_MS = 500          # the same beat as the GTK window; the server announces nothing
 WINDOW_WIDTH, WINDOW_HEIGHT = 720, 660
@@ -330,8 +332,21 @@ class MainWindow(QMainWindow):
         self._bitrate_row = Row(grid, line, _("Bitrate"), self._bitrate_combo, _(BITRATE_HINT))
         line += 1
 
+        # the three rows 1.1.0 added to the GTK window, in the same order there
+        self._codec_combo = self._combo([_(text) for text in CODEC_LABELS], self._on_codec)
+        self._codec_row = Row(grid, line, _("Codec"), self._codec_combo)
+        line += 1
+
         self._entropy_combo = self._combo(ENTROPY_LABELS, self._on_entropy)
         self._entropy_row = Row(grid, line, _("Entropy coding"), self._entropy_combo)
+        line += 1
+
+        self._deblock_combo = self._combo([_(text) for text in DEBLOCK_LABELS], self._on_deblock)
+        self._deblock_row = Row(grid, line, _("NVENC deblocking filter"), self._deblock_combo)
+        line += 1
+
+        self._motion_combo = self._combo([_(text) for text in MOTION_LABELS], self._on_motion)
+        self._motion_row = Row(grid, line, _("NVENC motion vectors"), self._motion_combo)
         line += 1
 
         self._rate_combo = self._combo([_(text) for text in RATE_LABELS], self._on_rate)
@@ -346,8 +361,8 @@ class MainWindow(QMainWindow):
         self._display_row = Row(grid, line, _("The desktop while streaming"), self._display_combo)
 
         self._rows += [self._encoder_row, self._loss_row, self._size_row, self._fps_row,
-                       self._bitrate_row, self._entropy_row, self._rate_row, self._slice_row,
-                       self._display_row]
+                       self._bitrate_row, self._codec_row, self._entropy_row, self._deblock_row,
+                       self._motion_row, self._rate_row, self._slice_row, self._display_row]
         self._retranslate.append(self._retranslate_video)
         return box
 
@@ -521,6 +536,19 @@ class MainWindow(QMainWindow):
     def _on_bitrate(self, index: int) -> None:
         self._server.video_kbps = protocol.BITRATE_CHOICES_KBPS[index]
 
+    def _on_codec(self, index: int) -> None:
+        if 0 <= index < len(protocol.VIDEO_CODECS):
+            self._server.video_codec = protocol.VIDEO_CODECS[index]
+            self._codec_row.set_hint(_(CODEC_HINTS[index]))
+
+    def _on_deblock(self, index: int) -> None:
+        if 0 <= index < len(protocol.NVENC_DEBLOCKING):
+            self._server.nvenc_deblocking = protocol.NVENC_DEBLOCKING[index]
+
+    def _on_motion(self, index: int) -> None:
+        if 0 <= index < len(protocol.NVENC_MOTION):
+            self._server.nvenc_motion = protocol.NVENC_MOTION[index]
+
     def _on_entropy(self, index: int) -> None:
         self._server.entropy_coder = protocol.ENTROPY_CODERS[index]
         self._entropy_row.set_hint(_(ENTROPY_HINTS[index]))
@@ -653,6 +681,10 @@ class MainWindow(QMainWindow):
         self._select(self._fps_combo, self._index_in(protocol.FPS_CHOICES, server.stream_fps))
         self._select(self._bitrate_combo, self._index_in(protocol.BITRATE_CHOICES_KBPS, server.video_kbps))
         self._select(self._entropy_combo, self._index_in(protocol.ENTROPY_CODERS, server.entropy_coder))
+        self._select(self._codec_combo, self._index_in(protocol.VIDEO_CODECS, getattr(server, "video_codec", "h264")))
+        self._select(self._deblock_combo, self._index_in(protocol.NVENC_DEBLOCKING,
+                                                         getattr(server, "nvenc_deblocking", "on")))
+        self._select(self._motion_combo, self._index_in(protocol.NVENC_MOTION, getattr(server, "nvenc_motion", "quarter")))
         self._select(self._rate_combo, self._index_in(protocol.RATE_CONTROLS, server.rate_control))
         self._select(self._slice_combo, self._index_in(protocol.SLICE_COUNTS, server.slice_count))
         self._select(self._display_combo, self._index_in(DISPLAY_STRATEGIES, server.display_strategy))
@@ -663,6 +695,15 @@ class MainWindow(QMainWindow):
         self._loss_row.set_hint(_(LOSS_RECOVERY_HINTS[self._loss_combo.currentIndex()]))
         self._size_row.set_hint(_(size_hints()[max(0, self._size_combo.currentIndex())]))
         self._entropy_row.set_hint(_(ENTROPY_HINTS[self._entropy_combo.currentIndex()]))
+        self._codec_row.set_hint(_(CODEC_HINTS[max(0, self._codec_combo.currentIndex())]))
+        # the two NVENC switches only exist with an ffmpeg that passes them on (the installer brings one);
+        # with any other ffmpeg - or no NVIDIA card - the row says so and stays greyed out
+        for row, combo, hints, missing, able in (
+                (self._deblock_row, self._deblock_combo, DEBLOCK_HINTS, DEBLOCK_UNAVAILABLE_HINT, "nvenc_can_skip_deblocking"),
+                (self._motion_row, self._motion_combo, MOTION_HINTS, MOTION_UNAVAILABLE_HINT, "nvenc_can_use_whole_pixels")):
+            available, hint = nvenc_switch_hint(server, able, hints, combo.currentIndex(), missing)
+            row.set_enabled(available)
+            row.set_hint(_(hint))
         self._rate_row.set_hint(_(RATE_HINTS[self._rate_combo.currentIndex()]))
         self._slice_row.set_hint(_(SLICE_HINTS[self._slice_combo.currentIndex()]))
         self._display_row.set_hint(_(DISPLAY_HINTS[self._display_combo.currentIndex()]))
@@ -786,6 +827,12 @@ class MainWindow(QMainWindow):
         self._bitrate_row.title.setText(_("Bitrate"))
         self._bitrate_row.set_hint(_(BITRATE_HINT))
         self._entropy_row.title.setText(_("Entropy coding"))
+        self._codec_row.title.setText(_("Codec"))
+        self._deblock_row.title.setText(_("NVENC deblocking filter"))
+        self._motion_row.title.setText(_("NVENC motion vectors"))
+        self._relabel(self._codec_combo, [_(text) for text in CODEC_LABELS])
+        self._relabel(self._deblock_combo, [_(text) for text in DEBLOCK_LABELS])
+        self._relabel(self._motion_combo, [_(text) for text in MOTION_LABELS])
         self._rate_row.title.setText(_("Rate control"))
         self._slice_row.title.setText(_("Slices per picture (experiment)"))
         self._display_row.title.setText(_("The desktop while streaming"))

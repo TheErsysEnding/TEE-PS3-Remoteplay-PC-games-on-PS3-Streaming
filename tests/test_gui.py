@@ -444,7 +444,17 @@ class MainWindowTest(unittest.TestCase):
                 about = window.show_about()
                 self.assertIsInstance(about, Adw.AboutDialog)
                 self.assertEqual("TEE Cell Stream Server", about.get_application_name())
-                about.force_close()
+                holder["about"] = about
+
+            def about_closed():
+                # closed one step after it opened, as a person would: libadwaita 1.5 (Ubuntu 24.04) leaves the
+                # window believing a dialog is still up when one is presented and force-closed inside the same
+                # main-loop turn, and then swallows the window's close() for good. Measured against 1.7, where
+                # it does not happen; with any gap between open and close both versions behave.
+                holder.pop("about").force_close()
+
+            def close_after_about():
+                window = holder["window"]
                 # closing hides, does not quit; the one-time notice goes out once
                 self.assertTrue(window.get_visible())
                 window.close()
@@ -475,6 +485,8 @@ class MainWindowTest(unittest.TestCase):
             steps.add(700, connected)
             steps.add(700, disconnected_and_choices)
             steps.add(700, commands_saved)
+            steps.add(300, about_closed)
+            steps.add(500, close_after_about)
             steps.add(300, hidden)
 
         mock, _notifications, window = self._run_window(populate)

@@ -1,7 +1,7 @@
 ; Der Windows-Installer fuer TEE PS3 Remoteplay.
 ;
 ; Er bringt alles mit, was der Server braucht, damit nach der Erstinstallation nichts nachzureichen ist:
-;   - den Server selbst (PyInstaller-Einzeldatei)
+;   - den Server selbst (PyInstaller-Ordner)
 ;   - ffmpeg.exe, NEBEN die Server-exe gelegt, weil ffmpeg_find.py genau dort zuerst nachsieht
 ;   - den ViGEmBus-Treiber, ohne den es keinen virtuellen Controller gibt - still und nur wenn er fehlt
 ;   - die Firewall-Ausnahme fuer UDP 38310, ohne die die PS3 den Server zwar findet, aber nichts zurueck-
@@ -10,7 +10,7 @@
 ; Gebaut wird er auf dem Windows-PC mit Inno Setup:  ISCC.exe installer.iss
 
 #define AppName       "TEE PS3 Remoteplay"
-#define AppVersion    "1.0.1"
+#define AppVersion    "1.1.1"
 #define AppPublisher  "TEE"
 #define AppUrl        "https://github.com/TheErsysEnding/TEE-PS3-Remoteplay-PC-games-on-PS3-Streaming"
 #define AppDonate     "https://bero-host.de/spenden/x8atfjdyolqr"
@@ -44,6 +44,8 @@ SetupIconFile=tee-ps3-remote-player.ico
 UninstallDisplayIcon={app}\{#ServerExe}
 UninstallDisplayName={#AppName} {#AppVersion}
 Compression=lzma2/max
+; die Dateizeiten im Installer in UTC, nicht in der Ortszeit des Bau-Rechners
+TimeStampsInUTC=yes
 SolidCompression=yes
 WizardStyle=modern
 DisableProgramGroupPage=yes

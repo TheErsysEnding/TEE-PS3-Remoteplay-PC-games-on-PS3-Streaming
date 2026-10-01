@@ -65,7 +65,7 @@ class DdaCapture(ScreenCapture):
     def start(self, width: int, height: int, fps: float) -> bool:
         self.width, self.height, self.fps = width, height, fps
         self.captured_fps = int(fps)   # nominal: ffmpeg pulls at this rate, we never see the frames
-        log.write(_("capture: ddagrab on output %d (%d fps, scaled to %dx%d)")
+        log.write(_("capture: ddagrab on output %d (%g fps, scaled to %dx%d)")
                   % (output_index(), fps, width, height))
         return True
 
@@ -105,7 +105,7 @@ class GdiCapture(ScreenCapture):
     def start(self, width: int, height: int, fps: float) -> bool:
         self.fps = fps
         self.captured_fps = int(fps)
-        log.write(_("capture: gdigrab (%d fps, scaled to %dx%d)") % (fps, width, height))
+        log.write(_("capture: gdigrab (%g fps, scaled to %dx%d)") % (fps, width, height))
         return True
 
     def ffmpeg_input_args(self) -> list[str]:
@@ -114,6 +114,34 @@ class GdiCapture(ScreenCapture):
 
     def feed(self, ffmpeg_stdin) -> None:
         return
+
+    def stop(self) -> None:
+        self.captured_fps = 0
+
+
+class TestPatternCapture(ScreenCapture):
+    """ffmpeg's own test picture instead of the desktop (TEE_CST_TEST_SOURCE=1, as on Linux): for a server
+    that runs where there is no desktop to duplicate - an ssh session, a build VM, the integration test.
+    -re makes ffmpeg hand the frames out in real time, as a real capture would."""
+
+    name = "testsrc"
+    needs_scale = False
+
+    def __init__(self):
+        super().__init__()
+        self.width = self.height = 0
+        self.fps = 0.0
+
+    def start(self, width: int, height: int, fps: float) -> bool:
+        self.width, self.height, self.fps = width, height, fps
+        self.captured_fps = int(fps)
+        log.write(_("capture: test picture (%g fps, %dx%d)") % (fps, width, height))
+        return True
+
+    def ffmpeg_input_args(self) -> list[str]:
+        numerator, denominator = protocol.fps_fraction(self.fps)
+        return ["-re", "-f", "lavfi", "-i",
+                "testsrc2=size=%dx%d:rate=%d/%d,format=yuv420p" % (self.width, self.height, numerator, denominator)]
 
     def stop(self) -> None:
         self.captured_fps = 0
@@ -138,6 +166,8 @@ BACKENDS: dict[str, type] = {"ddagrab": DdaCapture, "gdigrab": GdiCapture}
 
 def create_capture():
     """Desktop Duplication unless TEE_CST_CAPTURE asks for something else."""
+    if os.environ.get("TEE_CST_TEST_SOURCE") == "1":
+        return TestPatternCapture()
     wanted = os.environ.get("TEE_CST_CAPTURE", "").strip().lower()
     if wanted:
         chosen = BACKENDS.get(wanted)

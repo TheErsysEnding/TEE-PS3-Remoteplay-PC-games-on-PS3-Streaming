@@ -1,3 +1,22 @@
+tee-cell-stream-server (1:1.1.1) unstable; urgency=medium
+
+  * Eigenes ffmpeg im Paket: 8.0.1 mit den zwei Patches (NVENC ohne Deblocking,
+    NVENC auf ganzen Pixeln, MPEG-2-Intra-Refresh), gebaut in Ubuntu 24.04 -
+    laeuft ab glibc 2.38, also Ubuntu 24.04+ und Debian 13+. Faellt auf das
+    ffmpeg der Distribution zurueck, wenn es nicht startet. Paket jetzt amd64.
+  * Takt-Kopplung: 30 oder 50 fps, die bewusst anders als der Fernseher gewaehlt
+    sind, werden nicht mehr auf 59,94 hochgezogen (Fehler in 1.1.0); 30 fps an
+    einem 59,94-Hz-Fernseher laufen jetzt mit 29,97.
+  * Takt-Kopplung auch fuer Aufnahmen, die ffmpeg selbst taktet (x11grab und
+    unter Windows ddagrab/gdigrab): der Encoder startet einmal neu mit der
+    Rate des Fernsehers.
+  * NVENC-Schalter im Fenster nur noch mit NVIDIA-Karte bedienbar.
+  * Behoben: die Bereit-Zeile und "Taste gedrueckt" im Protokoll waren nie
+    uebersetzt, 59,94 fps stand dort als 59; der fensterlose Modus ignorierte
+    die Spracheinstellung.
+
+ -- TEE <github@teebug.de>  Thu, 01 Oct 2026 01:39:27 +0200
+
 tee-cell-stream-server (1:1.1.0) unstable; urgency=medium
 
   * Bildschirm-Takt-Kopplung: mit Vsync meldet die PS3 zweimal pro Sekunde,
@@ -667,8 +686,7 @@ tee-cell-stream-server (1.7.0) unstable; urgency=medium
 
 tee-cell-stream-server (1.6.2) unstable; urgency=medium
 
-  * Maintainer-Adresse auf github@teebug.de. Die vorherige war eine private
-    Adresse und hatte in einem veroeffentlichten Paket nichts verloren.
+  * Maintainer-Adresse auf github@teebug.de.
 
  -- TEE <github@teebug.de>  Fri, 28 Aug 2026 12:30:00 +0200
 

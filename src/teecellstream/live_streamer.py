@@ -42,7 +42,7 @@ class _Session:
     read the flags of the session that replaced it."""
 
     __slots__ = ("target", "active", "intra", "width", "height", "process", "capture", "encoder",
-                 "source_was_busy")
+                 "source_was_busy", "fps_override", "restart_for_rate")
 
     def __init__(self, target, intra: bool, width: int, height: int):
         self.target = target
@@ -56,6 +56,10 @@ class _Session:
         self.capture = None
         self.encoder: encoders.VideoEncoder | None = None
         self.source_was_busy = False    # last attempt produced nothing because the screen was not free yet
+        # the display lock for a capture ffmpeg paces itself: the television's rate once the console reported
+        # it, and whether the running encoder is being ended to start again at that rate (see pace())
+        self.fps_override: float | None = None
+        self.restart_for_rate = False
 
 
 class LiveStreamer:
@@ -205,19 +209,54 @@ class LiveStreamer:
         session = self._session
         return session is not None and session.active and session.target == target
 
+    def _session_fps(self, session: _Session) -> float:
+        """The rate this session's encoder runs at: the television's once a display lock moved it there."""
+        if session.fps_override:
+            return session.fps_override
+        return self._current_fps(session.width, session.height)
+
     def pace(self, period_s: float, error_s: float) -> None:
-        """A PACE report from the console (protocol.PACE_GAIN): hand the capture its refresh and a phase step."""
+        """A PACE report from the console (protocol.PACE_GAIN).
+
+        A capture that paces the pictures itself (the portal pipe) gets the refresh and a phase step. One
+        that ffmpeg paces (ddagrab, gdigrab, x11grab) cannot follow picture by picture, so its encoder is
+        ended and started again at the television's rate - once per session, a moment without pictures
+        right after the start. That removes the drift that filled the console's vsync queue; the phase is
+        then left where it falls, which costs a constant fraction of a refresh instead of a wave."""
         session = self._session
         capture = session.capture if session is not None and session.active else None
         if capture is None:
             return
-        step = max(-protocol.PACE_MAX_STEP_S, min(protocol.PACE_MAX_STEP_S, protocol.PACE_GAIN * error_s))
-        capture.set_display_clock(period_s, step)
         self._pace_reports += 1
-        if self._pace_reports == 1:
-            log.write(_("live: pacing to the PS3's display: %.3f Hz") % (1.0 / period_s))
-        elif self._pace_reports % 120 == 0:   # every ~minute: is it still holding?
-            log.write(_("live: display lock: %.3f Hz, pictures %+.1f ms from the target") % (1.0 / period_s, error_s * 1000))
+        chosen = self._current_fps(session.width, session.height)
+        lock = protocol.display_lock(chosen, period_s)
+        if lock is None:
+            if self._pace_reports == 1:
+                log.write(_("live: the PS3's display runs at %.3f Hz and %g fps was chosen on purpose - not locking to it")
+                          % (1.0 / period_s, chosen))
+            return
+        per_picture, rate = lock
+        step = max(-protocol.PACE_MAX_STEP_S, min(protocol.PACE_MAX_STEP_S, protocol.PACE_GAIN * error_s))
+        if capture.set_display_clock(period_s * per_picture, step):
+            if self._pace_reports == 1:
+                log.write(_("live: pacing to the PS3's display: %.3f Hz") % (1.0 / period_s))
+            elif self._pace_reports % 120 == 0:   # every ~minute: is it still holding?
+                log.write(_("live: display lock: %.3f Hz, pictures %+.1f ms from the target")
+                          % (1.0 / period_s, error_s * 1000))
+            return
+        wanted = float(rate)
+        if session.fps_override is not None or abs(self._session_fps(session) - wanted) / wanted < 1e-4:
+            return   # already restarted once, or already at that rate
+        session.fps_override = wanted
+        session.restart_for_rate = True
+        log.write(_("live: the PS3's television shows %.3f Hz - starting the encoder again at %s fps to match it")
+                  % (1.0 / period_s, "%d/%d" % protocol.fps_fraction(wanted)))
+        process = session.process
+        if process is not None and process.poll() is None:
+            try:
+                process.terminate()   # the pump reads to the end of it and _run_pump starts the next one
+            except OSError:
+                pass
 
     def reset_failures(self) -> None:
         self._failed_starts = 0
@@ -339,6 +378,13 @@ class LiveStreamer:
                     break
                 log.write("live: versuche Encoder " + encoder.name)
                 outcome = self._pump_with_retry(session, encoder)
+                # ended on purpose to start again at the television's rate (pace()): same encoder, same session.
+                # The stream already ran, so a restart that fails ends it like any other stream, never as a
+                # failed start.
+                while session.active and session.restart_for_rate and outcome:
+                    session.restart_for_rate = False
+                    self._pump_with_retry(session, encoder)
+                    outcome = True
                 if outcome is None:
                     capture_failed = session.active   # no picture source at all: the other encoders would fail the same way
                     break
@@ -388,7 +434,7 @@ class LiveStreamer:
             return None
         session.capture = capture
         try:
-            started = capture.start(session.width, session.height, self._current_fps(session.width, session.height))
+            started = capture.start(session.width, session.height, self._session_fps(session))
         except Exception as error:   # noqa: BLE001
             log.write(_("live: screen capture (%s) aborted: %s") % (capture.name, error))
             started = False
@@ -417,7 +463,7 @@ class LiveStreamer:
                       else _("live: NVENC keeps quarter-pixel motion vectors - this ffmpeg has no -mv_precision option"))
         try:
             args = encoders.build_ffmpeg_args(self._ffmpeg_path, encoder, input_args, session.width, session.height,
-                                              self._current_fps(session.width, session.height), self._current_kbps(), loss_recovery, capture.needs_scale,
+                                              self._session_fps(session), self._current_kbps(), loss_recovery, capture.needs_scale,
                                               self._current_entropy_coder(), self._current_rate_control(),
                                               self._current_slice_count(), nvenc_deblocking_off=deblocking_off,
                                               nvenc_whole_pixels=whole_pixels)
@@ -554,7 +600,7 @@ class LiveStreamer:
         # the reason was drained into error_tail and then thrown away, because only the zero-frame case
         # printed it. A session that ends because ffmpeg quit is exactly when that text is wanted.
         # session.active is still true here when the pump is leaving on its own rather than being stopped.
-        if session.active and died_on_its_own:
+        if session.active and died_on_its_own and not session.restart_for_rate:
             log.write(_("live: ffmpeg exited by itself after %d frames, code %s. It said:\n%s")
                       % (frame_id, natural_code, error_tail["text"].strip() or "(nothing)"))
         log.write(_("live: %d frames sent") % frame_id)

@@ -4,18 +4,7 @@ build/
 dist/*.deb
 .venv*/
 
-# working documents, not part of the package
-FUER-MOHASI-2.md
-ANTWORT-MOHASI-2.md
-NOTIZEN-offen.md
-KOMMENTAR-github.md
-ANTWORT-github.md
-ANTWORT-psxplace.md
-ANTWORT-github-lang.md
-INTRO-psxplace.md
-POST-psxplace.txt
-DISCORD-post.md
-NACHRICHT-MOHASI-kurz.md
+# working documents, not part of the package: listed in .git/info/exclude, which is never published
 
 # PS3-Seite und Arbeitsmaterial - gehoert nicht in das Serverpaket:
 # ps3-src ist mohasis Quelltext (nicht unserer zum Veroeffentlichen), ps3-max sind gebaute .pkg
@@ -24,8 +13,6 @@ ps3-src/
 ps3-max/
 ps3-tests/
 branding/
-PSXPLACE-post.md
-PSXPLACE-post.bbcode.txt
 
 # Windows-Bau: fremde Binaerdateien und fertige Pakete gehoeren in ein Release, nicht ins Repo.
 # ffmpeg.exe allein sind 99 MB, und der ViGEmBus-Installer ist Nefarius' Datei, nicht unsere.
@@ -37,8 +24,11 @@ windows/*.exe
 # test material of the 1.1.0 cycle, and the local ffmpeg build tree (only its patches and README are published)
 deblock-test/
 release-archiv/
-FUER-MOHASI-3.md
 ffmpeg-nvenc/*
 !ffmpeg-nvenc/*.patch
 !ffmpeg-nvenc/README.md
+!ffmpeg-nvenc/build-ffmpeg.sh
 ffmpeg-nvenc/nvenc-dblk_idc.patch
+
+# 1.1.1 build tree: chroot, toolchains, downloads (large, local only)
+build-1.1.1/

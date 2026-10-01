@@ -8,7 +8,14 @@ def main(argv: list[str]) -> int:
     if "--headless" in argv:
         # no window at all - for the integration test and for running under a plain terminal
         from . import log
+        from .i18n import available_languages, set_language
         from .server import Server
+        from .settings import settings
+        # the saved language, as both windows apply it: without it a headless server always logged in
+        # English, whatever the user had chosen
+        saved = settings.get("language", "en")
+        if saved in available_languages():
+            set_language(saved)
         server = Server()
         if not server.start():
             print("Another copy of the server is already running.", file=sys.stderr)

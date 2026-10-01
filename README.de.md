@@ -21,8 +21,10 @@ An einer echten PS3 gemessen, PC und Konsole direkt per Netzwerkkabel verbunden:
 | 1792 × 1008 | 1,96× | 40–47 ms | 38–42 ms | 0 |
 | **1920 × 1088** | **2,27×** | **40–47 ms** | **38–44 ms** | **0** über eine ganze Runde |
 
-Full HD bei 60 fps braucht **x264** statt NVENC: `--preset ultrafast` schaltet den Deblocking-Filter ab,
-und der ist der teuerste Teil der H.264-Decodierung. Mit NVENC kostet dasselbe Bild 147 ms statt 38–44 ms.
+Full HD bei 60 fps braucht **x264** oder **NVENC ohne Deblocking-Filter**: `--preset ultrafast` schaltet
+den Filter ab, und der ist der teuerste Teil der H.264-Decodierung. Mit NVENC samt Filter kostet dasselbe
+Bild 147 ms statt 38–44 ms; seit 1.1.0 kann NVENC ihn weglassen und auf ganzen Pixeln rechnen (Schalter im
+Fenster, nur NVIDIA) — dann 23,6 ms Decode bei 1920×1080, und die CPU bleibt frei.
 Details im englischen [README.md](README.md).
 
 ### Es läuft noch nicht vollkommen flüssig — bei keiner Auflösung
@@ -47,20 +49,24 @@ Zwei Dinge, die man vorher wissen sollte: **59,94 fps ist die richtige Wahl**, n
 der Konsole selbst, jede andere schwebt dagegen. Und ein Monitor, der bei der Streamgröße kein ganzes
 Vielfaches von 59,94 kann, wird von einer größeren herunterskaliert; das kostet Schärfe, nicht Flüssigkeit.
 
-Die verbleibende Arbeit liegt auf der Konsolenseite: die Ausgabe an ihren eigenen Bildrücklauf koppeln,
-statt jedes Bild sofort nach dem Decodieren zu zeigen. Das ist der nächste Schritt und in dieser Fassung
-noch nicht drin.
+**Seit 1.1.0 taktet sich die Konsole bei Vsync selbst.** Zweimal pro Sekunde meldet sie dem Server, wie
+früh oder spät ihre Bilder vor dem Bildwechsel des Fernsehers fertig sind, und der Server sendet im Takt
+des Fernsehers — egal, womit der PC-Monitor läuft. Die Latenz mit Vsync fiel von etwa 72 auf etwa 40 ms.
+Ganz gleichmäßig ist es noch nicht: Springt die Decodierzeit, verpasst ab und zu ein Bild seinen Wechsel.
 
 ![Das Fenster](docs/fenster-server.png)
 
 ## Installation (1 Klick)
 
 ```
-sudo apt install ./tee-cell-stream-server_1.1.0_all.deb
+sudo apt install ./tee-cell-stream-server_1.1.1_amd64.deb
 ```
 
-Alles Nötige (ffmpeg mit NVENC, GStreamer/PipeWire, GTK4/libadwaita, evdev, Portal) kommt aus den
-Ubuntu-Paketquellen. Das Paket richtet außerdem ein:
+Läuft auf **Ubuntu 24.04 und neuer** und **Debian 13 und neuer** (und darauf aufbauenden Distributionen).
+Im Paket steckt ein eigenes ffmpeg 8.0.1 mit drei Änderungen in zwei Patches (NVENC ohne Deblocking-Filter,
+NVENC auf ganzen Pixeln, Intra-Refresh für den MPEG-2-Test, siehe `ffmpeg-nvenc/`); sollte es einmal nicht laufen, nimmt der
+Server das ffmpeg der Distribution. Alles andere (GStreamer/PipeWire, GTK4/libadwaita, evdev, Portal) kommt
+aus den Paketquellen. Das Paket richtet außerdem ein:
 
 - `/dev/uinput`-Zugriff für den angemeldeten Benutzer (udev-Regel, wie bei Steam) → virtuelles Gamepad
 - bei aktiver `ufw`-Firewall die Freigabe von **UDP 38310** (die PS3 spricht den Server darauf an)
@@ -121,8 +127,6 @@ Woran du erkennst, worin du bist: Im Statistik-Panel steht `Display:` bei vsync 
 und zurück – die Umstellung ist sofort sichtbar, ohne Neustart. Log-Zeilen werden beim Schreiben übersetzt;
 bereits geschriebene Zeilen behalten also ihre Sprache, denn ein Log ist ein Protokoll, keine Ansicht.
 
-| START (nicht streamend) | App beenden |
-
 Maus-Modus: linker Stick = Zeiger, rechter Stick = Scrollen, Kreuz/Kreis/Quadrat = links/rechts/mitte,
 D-Pad = Pfeiltasten, START = Super-Taste. Dreieck öffnet die Bildschirmtastatur der PS3; die Zeichen werden
 am PC layoutkorrekt getippt (deutsches Layout wird berücksichtigt).
@@ -133,7 +137,8 @@ am PC layoutkorrekt getippt (deutsches Layout wird berücksichtigt).
   die Wahl wird gemerkt. Während eine PS3 streamt, ist die Auswahl gesperrt.
 - **Auflösung**: 1280×720, 1408×800, 1536×864, 1792×1008 oder 1920×1088. Alle sind Vielfache von 16,
   weil H.264 in 16×16-Blöcken codiert und die PS3-App die *codierte* Größe zeichnet — 1920×1080 würde
-  dort als 1920×1088 leicht verzerrt ankommen. Ab 1536×864 gehört **x264** als Encoder dazu.
+  dort als 1920×1088 leicht verzerrt ankommen. Ab 1536×864 gehört **x264** als Encoder dazu — oder NVENC
+  mit **Deblocking-Filter aus** und **ganzen Pixeln** (beides nur mit NVIDIA-Karte).
 - **Bitrate** (Standard 6 Mbit/s, bis 40 Mbit/s) und **Entropie-Codierung** (Standard CAVLC): siehe
   „Wenn die PS3 weniger als 60 fps zeigt". Für die Decodelast zählen vor allem die Pixel, nicht die Bits:
   bei 1792×1008 kosteten 35 statt 12 Mbit/s nur 2 ms Decode und 5 ms Latenz.
@@ -155,7 +160,7 @@ am PC layoutkorrekt getippt (deutsches Layout wird berücksichtigt).
 | Windows | Linux |
 |---|---|
 | `ddagrab` (DirectX-Capture) | xdg-desktop-portal ScreenCast → PipeWire → GStreamer; X11: `x11grab` |
-| gebündeltes ffmpeg | Ubuntu-ffmpeg (`h264_nvenc`, identische Encoder-Argumente) |
+| gebündeltes ffmpeg | gebündeltes ffmpeg 8.0.1 mit zwei Patches (`ffmpeg-nvenc/`); das der Distribution als Ausweich |
 | WASAPI-Loopback | PipeWire-Sink-Monitor (`@DEFAULT_MONITOR@`) |
 | ViGEmBus-Treiber | `/dev/uinput` (Kernel) — kein Treiber |
 | `SendInput` | uinput-Maus/-Tastatur, Zeichen über libxkbcommon layoutkorrekt |

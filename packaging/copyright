@@ -22,6 +22,20 @@ License: Apache-2.0
  On Debian systems, the complete text of the Apache License, Version 2.0 can
  be found in "/usr/share/common-licenses/Apache-2.0".
 
+Files: usr/lib/tee-cell-stream-server/ffmpeg/ffmpeg
+Copyright: 2000-2025 the FFmpeg developers (https://ffmpeg.org)
+           2003-2025 x264 project (https://www.videolan.org/developers/x264.html)
+           2026 TEE <github@teebug.de> (the two patches)
+License: GPL-2+
+Comment: ffmpeg 8.0.1 (release key FCF986EA15E6E293A5644F10B4322F04D67658D8) with the patches in
+ /usr/share/doc/tee-cell-stream-server/ffmpeg/, linked with x264 r3222 b35605a, built with
+ build-ffmpeg.sh in the same folder. The complete corresponding source is attached to every release
+ as tee-ps3-remoteplay-ffmpeg-source-<version>.tar.xz:
+ https://github.com/TheErsysEnding/TEE-PS3-Remoteplay-PC-games-on-PS3-Streaming/releases
+ .
+ On Debian systems, the complete text of the GNU General Public License version 2 can be found in
+ "/usr/share/common-licenses/GPL-2".
+
 Files: usr/share/icons/hicolor/*/apps/tee-cell-stream-server.png
 Copyright: 2025-2026 mohasi
 License: Apache-2.0

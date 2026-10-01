@@ -220,6 +220,7 @@ add_translations({
         "Was NVENC selbst wählt – die PS3 muss jeden Block zwischen zwei Pixeln erst ausrechnen",
     "Every motion vector on a whole pixel – the PS3 copies instead of interpolating":
         "Jeder Bewegungsvektor auf einem ganzen Pixel – die PS3 kopiert nur, statt zu rechnen",
+    "Only for NVIDIA graphics (NVENC) – this PC has none": "Nur für NVIDIA-Grafik (NVENC) – dieser PC hat keine",
     "Needs an ffmpeg with the -mv_precision option (see ffmpeg-nvenc) – this one keeps quarter pixels":
         "Braucht ein ffmpeg mit der Option -mv_precision (siehe ffmpeg-nvenc) – dieses bleibt bei Viertelpixeln",
     "video: end the stream first, then change the motion vectors":
@@ -269,6 +270,17 @@ def fps_labels() -> tuple[str, ...]:
     return tuple("%g fps%s" % (f, note(f)) for f in protocol.FPS_CHOICES)
 
 
+def nvenc_switch_hint(server, able: str, hints, index: int, missing_ffmpeg: str) -> tuple[bool, str]:
+    """(enabled, hint) for one of the two NVENC rows, the same in both windows: usable only with an NVENC
+    encoder on this PC AND an ffmpeg that passes the option on."""
+    has_nvenc = any(getattr(encoder, "kind", "") == "nvenc" for encoder in getattr(server, "available_encoders", ()))
+    if not has_nvenc:
+        return False, NVENC_MISSING_HINT
+    if not getattr(server, able, False):
+        return False, missing_ffmpeg
+    return True, hints[index] if 0 <= index < len(hints) else hints[0]
+
+
 def bitrate_labels() -> tuple[str, ...]:
     """Built on demand rather than at import: the word in brackets is translated, so the list has to be
     rebuilt whenever the language changes."""
@@ -295,6 +307,9 @@ MOTION_LABELS = ("Quarter pixel", "Whole pixels")    # in protocol.NVENC_MOTION 
 MOTION_HINTS = ("NVENC's own choice – the PS3 has to interpolate every block that points between pixels",
                 "Every motion vector on a whole pixel – the PS3 copies instead of interpolating")
 MOTION_UNAVAILABLE_HINT = "Needs an ffmpeg with the -mv_precision option (see ffmpeg-nvenc) – this one keeps quarter pixels"
+# both NVENC switches on a PC without an NVIDIA encoder: the bundled ffmpeg knows the options everywhere,
+# so "does ffmpeg have it" alone would offer them on an AMD or Intel machine where they change nothing
+NVENC_MISSING_HINT = "Only for NVIDIA graphics (NVENC) – this PC has none"
 
 ENTROPY_LABELS = ("CAVLC", "CABAC")
 ENTROPY_HINTS = ("The PS3 decodes CAVLC about 43 % faster – measured 22 ms instead of 36–40 ms at 720p",

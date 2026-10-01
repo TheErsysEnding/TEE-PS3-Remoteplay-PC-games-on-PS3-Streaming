@@ -21,7 +21,9 @@ try:
     gi.require_version("GLibUnix", "2.0")
     from gi.repository import GLibUnix
     _signal_add = GLibUnix.signal_add
-except (ValueError, ImportError):   # older PyGObject: the same function under its old name
+except (ValueError, ImportError, AttributeError):   # older GLib/PyGObject: the same function under its old name
+    # AttributeError is Ubuntu 24.04 (GLib 2.80): the GLibUnix namespace is there, signal_add is not yet -
+    # found by installing the .deb into a fresh 24.04, where the window did not even import
     _signal_add = GLib.unix_signal_add
 
 from . import APP_EXEC, APP_ID, APP_NAME, log, tray, ui  # noqa: E402

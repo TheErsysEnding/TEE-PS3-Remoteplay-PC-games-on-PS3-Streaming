@@ -128,7 +128,7 @@ class PadReceiver:
             pressed = describe_buttons(buttons & ~self._last_buttons)
             released = describe_buttons(self._last_buttons & ~buttons)
             if pressed:
-                log.write("pad: pressed " + pressed)
+                log.write(_("pad: pressed ") + pressed)
             if released:
                 log.write(_("pad: released ") + released)
             self._last_buttons = buttons

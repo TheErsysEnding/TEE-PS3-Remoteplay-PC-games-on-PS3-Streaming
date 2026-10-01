@@ -24,7 +24,9 @@ Ryzen 9 5900X + RTX 4070 Ti SUPER, Ubuntu 26.04, GNOME 50 on Wayland:
 
 That is not what the Windows original found — it measured 1080p at 80–120 ms and 27 fps, and with an NVENC
 stream this port reproduces exactly that. The difference is not the console but the encoder; see
-[The encoder decides what the console can do](#the-encoder-decides-what-the-console-can-do).
+[The encoder decides what the console can do](#the-encoder-decides-what-the-console-can-do). Since 1.1.0
+NVENC gets there too, with the deblocking filter off and whole-pixel motion vectors: 1920×1080 decodes in
+23.6 ms on the console, and the CPU stays free for the game.
 
 Two caveats on those numbers. **The PC and the PS3 were joined by a single Ethernet cable**, with no switch
 or router between them, so the network term is a best case and every extra hop adds to it. And decode time
@@ -53,8 +55,10 @@ it is the console's own, and every other rate beats against it. And a monitor th
 multiple of 59.94 at the stream's size will be scaled from a larger one, which costs sharpness rather than
 smoothness.
 
-The remaining work is on the console side: pacing presentation to its own vblank instead of showing each
-picture as soon as it is decoded. That is the next thing, and it is not in this release.
+**Since 1.1.0 the console paces itself with vsync on.** Twice a second it tells the server how early or late
+its pictures are ready relative to its television's refresh, and the server runs its frame clock at the
+television's rate — whatever the PC's monitor runs at. Latency with vsync fell from about 72 to about 40 ms.
+It is not perfectly even yet: when the decode time jumps, a picture still misses its refresh now and then.
 
 ## What you need
 
@@ -62,17 +66,21 @@ picture as soon as it is decoded. That is the next thing, and it is not in this 
   Without a PS3-side app there is nothing to stream to — this package is only the PC half.
   mohasi's original [`cell-stream.pkg`](https://github.com/mohasi/ps3-dev/releases/tag/174-a5dd795)
   works too, without the recording and the controls list.
-- **A Linux desktop with a screen-sharing portal**: GNOME on Wayland is what this was built and measured
-  on; X11 works through a fallback. Everything else comes from your distribution's own packages.
+- **Linux:** Ubuntu 24.04 or newer, Debian 13 or newer, or a distribution based on them, with a
+  screen-sharing portal: GNOME on Wayland is what this was built and measured on; X11 works through a
+  fallback. The package brings its own ffmpeg; everything else comes from the distribution's packages.
+- **Or Windows 10/11:** the installer brings the server, its ffmpeg and the controller driver along.
 - **A GPU that encodes H.264** (NVIDIA NVENC or Intel/AMD VA-API), or a CPU fast enough for x264.
 
 ## Install
 
 ```
-sudo apt install ./tee-cell-stream-server_1.1.0_all.deb
+sudo apt install ./tee-cell-stream-server_1.1.1_amd64.deb
 ```
 
-Get the `.deb` from [Releases](../../releases). Then **log out and back in once** — GNOME only reads newly
+Get the `.deb` from [Releases](../../releases). It contains ffmpeg 8.0.1 with the two patches from
+[`ffmpeg-nvenc/`](ffmpeg-nvenc/) — the NVENC and MPEG-2 switches in the window need them — and falls back to
+the distribution's ffmpeg if it ever cannot run. Then **log out and back in once** — GNOME only reads newly
 installed shell extensions when a session starts, and the bundled one is what keeps the capture alive
 while a game runs fullscreen. After that the server switches it on by itself.
 
@@ -203,6 +211,12 @@ deblocking filter off, and that filter is most of what H.264 costs to decode. Me
 1920×1088: **147 ms per picture with NVENC, 38–44 ms with x264** — and `behind` went from climbing by
 about 53 a second to a flat zero. The picture is blockier, which more bitrate partly buys back.
 
+**Or NVENC without the filter.** The ffmpeg in the packages carries two small patches
+([`ffmpeg-nvenc/`](ffmpeg-nvenc/)) with three changes: NVENC with the deblocking filter off, NVENC with motion vectors on
+whole pixels — the two largest decode costs measured on the console — and an intra-refresh sweep for the
+MPEG-2 test codec. With both NVENC switches at 1920×1080: 23.6 ms decode and 30.6 ms latency on the console,
+close to x264 and without its CPU load. They are in the window, for NVIDIA cards.
+
 **Bitrate is almost free, and almost pointless.** At 1792×1008, going from 12 to 35 Mbit/s changed decode
 by 2 ms and added 5 ms of latency. For this decoder it is pixels that cost, not bits. Set it high enough
 to look good and no higher.
@@ -252,7 +266,8 @@ uncompressed desktop audio, and the PS3 controller replayed as either a virtual 
 (`/dev/uinput`) or as mouse and keyboard with correct keyboard-layout handling via libxkbcommon.
 
 The window is GTK4/libadwaita with a tray icon, autostart and four user-defined commands the console can
-trigger. **Its interface is in German**, as is `README.de.md`; the code and its comments are in English.
+trigger. Its interface is in English and German (switchable in the window); `README.de.md` is the German guide, and
+the code and its comments are in English.
 
 ![Custom commands](docs/fenster-befehle.png)
 
@@ -263,8 +278,8 @@ trigger. **Its interface is in German**, as is `README.de.md`; the code and its 
 `behind` is the counter that then climbs. Three settings move it, in this order:
 
 1. **Entropy coding → CAVLC.** The largest single lever at any resolution.
-2. **Encoder → x264**, above 720p. It is the only one of the three that can switch the deblocking filter
-   off, and above 1536×864 that is the difference between playable and not.
+2. **Encoder → x264, or NVENC with the deblocking filter Off and Whole pixels**, above 720p. Without the
+   filter is what makes the difference between playable and not above 1536×864.
 3. **A smaller stream size.** Decode cost tracks pixels almost linearly, which bitrate does not.
 
 To measure what actually leaves for the console rather than guessing:
@@ -283,10 +298,10 @@ PYTHONPATH=src python3 -m teecellstream            # the app
 PYTHONPATH=src python3 -m teecellstream --headless # server only, no window
 PYTHONPATH=src python3 -m unittest discover -s tests
 bash tests/run_integration.sh                      # a fake PS3 against the real server
-bash packaging/build-deb.sh                        # → dist/*.deb
+bash packaging/build-deb.sh                        # → dist/*.deb (needs the ffmpeg build, see ffmpeg-nvenc/)
 ```
 
-491 unit tests plus an integration test that impersonates a PS3 client and checks the stream against what
+Over 600 unit tests plus an integration test that impersonates a PS3 client and checks the stream against what
 the console expects: fragment layout, clock sync, frame pacing, audio packet rate and the controller
 channel. `SPEC.md` documents every module's contract and, where behaviour deviates from the Windows
 original, the measurement that justified it.

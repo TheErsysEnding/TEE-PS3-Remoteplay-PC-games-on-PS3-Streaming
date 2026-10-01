@@ -195,7 +195,8 @@ class Server:
     @property
     def settings_summary(self) -> str:
         recovery = "Intra-Refresh" if self.loss_recovery == "intra" else "Keyframes"
-        return "%dx%d at %d fps, %d Mbit/s, %s, %s" % (self.stream_size + (self.stream_fps,
+        # %g: 59.94 is the whole point of offering it, and %d printed it as 59
+        return _("%dx%d at %g fps, %d Mbit/s, %s, %s") % (self.stream_size + (self.stream_fps,
                                                         self.video_kbps // 1000, self.entropy_coder.upper(), recovery))
 
     # the fuse. armed, the server answers the PS3; tripped, it ignores it and leaves the desktop alone.

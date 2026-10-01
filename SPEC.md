@@ -1,5 +1,10 @@
 # TEE Cell Stream Server Linux — Spezifikation / Modulverträge
 
+> **Stand:** Die Modulverträge gelten weiter. Was hier zu Paket und Umfang steht (Architecture `all`,
+> Ubuntu-ffmpeg, unveränderte PS3-App, deutsche Oberfläche), beschreibt den Stand bis 1.2.x. Seit 1.1.1
+> gilt: `.deb` für amd64 mit eigenem ffmpeg (`ffmpeg-nvenc/`), dazu ein Windows-Installer, eine eigene
+> PS3-App (TEE Remote Play) und eine Oberfläche in Englisch und Deutsch — siehe README.md.
+
 Linux-Port des Windows-Tools `cell-stream-server` (ps3-dev, Apache-2.0, Release 174-a5dd795).
 Die Original-Quellen liegen unter `upstream/server/*.cs` (Server) und `upstream/ps3-app/*` (PS3-Seite,
 Protokoll-Referenz). **Die PS3-App bleibt unverändert; dieser Server spricht ihr Protokoll byte-genau.**

@@ -39,6 +39,10 @@ export TEE_CST_SETTINGS_PATH="$WORK/settings.json"
 export TEE_CST_LOG_PATH="$WORK/server.log"
 SERVER_OUT="$WORK/server.stdout"
 rm -f "$TEE_CST_LOG_PATH" "$TEE_CST_SETTINGS_PATH"
+# The log lines checked below are the German ones, and English became the default language in 1.22.0 -
+# since then this script waited 20 s for "lausche auf udp" and failed on a server that was up after one.
+# Language is not a streaming setting, so the run still streams with the shipped defaults.
+echo '{"language": "de"}' > "$TEE_CST_SETTINGS_PATH"
 
 echo "== integration: work dir $WORK"
 

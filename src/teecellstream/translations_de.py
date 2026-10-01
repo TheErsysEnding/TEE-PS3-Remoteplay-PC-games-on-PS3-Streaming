@@ -11,7 +11,7 @@ GERMAN = {
     ' is stuck': ' hängt',
     '%d slices (%dx)': '%d Slices (%dx)',
     '%d superseded by a newer one%s)': '%d von einem neueren überholt%s)',
-    '%dx%d at %d fps, %d Mbit/s, %s, %s': '%dx%d mit %d fps, %d Mbit/s, %s, %s',
+    '%dx%d at %g fps, %d Mbit/s, %s, %s': '%dx%d mit %g fps, %d Mbit/s, %s, %s',
     '%s %dx%d (rate chosen by xrandr)': '%s %dx%d (Rate von xrandr gewählt)',
     '%s: no answer after %d s': '%s: keine Antwort nach %d s',
     '%s; without a rate: %s': '%s; ohne Rate: %s',
@@ -87,8 +87,8 @@ GERMAN = {
         'capture: die Quelle liefert keine Bilder mehr (%s%s) - sende das letzte Bild weiter',
     'capture: too few pictures to say anything about smoothness (%d)':
         'capture: zu wenige Bilder für eine Gleichmäßigkeits-Aussage (%d)',
-    'capture: x11grab on %s (%d fps, scaled to %dx%d)':
-        'capture: x11grab auf %s (%d fps, skaliert auf %dx%d)',
+    'capture: x11grab on %s (%g fps, scaled to %dx%d)':
+        'capture: x11grab auf %s (%g fps, skaliert auf %dx%d)',
     'childproc: the spawner does not answer, starting directly':
         'childproc: Spawner antwortet nicht, starte direkt',
     'could not take udp :%d - another copy of the server still holds the port. Giving up.':
@@ -177,10 +177,10 @@ GERMAN = {
     'nothing from the PS3 for %dms': 'seit %dms nichts von der PS3',
     # --- Windows-Fassung (siehe plat.py) ---
     'Desktop Duplication only exists on Windows': 'Desktop Duplication gibt es nur unter Windows',
-    'capture: ddagrab on output %d (%d fps, scaled to %dx%d)':
-        'Aufnahme: ddagrab auf Ausgang %d (%d fps, umgerechnet auf %dx%d)',
+    'capture: ddagrab on output %d (%g fps, scaled to %dx%d)':
+        'Aufnahme: ddagrab auf Ausgang %d (%g fps, umgerechnet auf %dx%d)',
     'gdigrab only exists on Windows': 'gdigrab gibt es nur unter Windows',
-    'capture: gdigrab (%d fps, scaled to %dx%d)': 'Aufnahme: gdigrab (%d fps, umgerechnet auf %dx%d)',
+    'capture: gdigrab (%g fps, scaled to %dx%d)': 'Aufnahme: gdigrab (%g fps, umgerechnet auf %dx%d)',
     'display: could not read the current resolution, streaming scaled instead':
         'Anzeige: aktuelle Auflösung nicht lesbar, es wird skaliert gestreamt',
     'display: %dx%d@%g was refused, streaming scaled instead':
@@ -391,5 +391,12 @@ GERMAN = {
     'pad: keyboard layout ': 'pad: Tastaturlayout ',
     'pad: released ': 'pad: losgelassen ',
     'ready: ': 'bereit: ',
+    'capture: test picture (%g fps, %dx%d)': 'capture: Testbild gestartet (%g fps, %dx%d)',
+    "live: the PS3's display runs at %.3f Hz and %g fps was chosen on purpose - not locking to it":
+        'live: der Bildschirm der PS3 läuft mit %.3f Hz, %g fps sind bewusst anders gewählt - keine Kopplung',
+    "live: the PS3's television shows %.3f Hz - starting the encoder again at %s fps to match it":
+        'live: der Fernseher an der PS3 zeigt %.3f Hz - der Encoder startet neu mit %s fps, passend dazu',
+    "ffmpeg: the bundled build does not run on this system (%s) - using the system's instead":
+        'ffmpeg: das mitgelieferte läuft auf diesem System nicht (%s) - nehme das des Systems',
     'beacon to: ': 'Beacon an: ',
 }

@@ -77,19 +77,19 @@ SCREENSAVER_ON_BUS = _name_has_owner("org.freedesktop.ScreenSaver")
 
 # ------------------------------------------------------------------------------------------------ netinfo
 
-# shaped like the output of: `ip -j -4 addr show up` (virbr0 is admin-up but has no carrier)
+# shaped like the output of: `ip -j -4 addr show up` (an idle bridge is admin-up but has no carrier)
 IP_SAMPLE = json.dumps([
     {"ifindex": 1, "ifname": "lo", "flags": ["LOOPBACK", "UP", "LOWER_UP"], "operstate": "UNKNOWN",
      "addr_info": [{"family": "inet", "local": "127.0.0.1", "prefixlen": 8, "scope": "host", "label": "lo"}]},
-    {"ifindex": 2, "ifname": "enp4s0", "flags": ["BROADCAST", "MULTICAST", "UP", "LOWER_UP"], "operstate": "UP",
+    {"ifindex": 2, "ifname": "eth0", "flags": ["BROADCAST", "MULTICAST", "UP", "LOWER_UP"], "operstate": "UP",
      "addr_info": [{"family": "inet", "local": "192.0.2.1", "prefixlen": 24, "broadcast": "192.0.2.255",
-                    "scope": "global", "noprefixroute": True, "label": "enp4s0"}]},
-    {"ifindex": 3, "ifname": "enp5s0", "flags": ["BROADCAST", "MULTICAST", "UP", "LOWER_UP"], "operstate": "UP",
+                    "scope": "global", "noprefixroute": True, "label": "eth0"}]},
+    {"ifindex": 3, "ifname": "eth1", "flags": ["BROADCAST", "MULTICAST", "UP", "LOWER_UP"], "operstate": "UP",
      "addr_info": [{"family": "inet", "local": "198.51.100.50", "prefixlen": 24, "broadcast": "198.51.100.255",
-                    "scope": "global", "dynamic": True, "label": "enp5s0"}]},
-    {"ifindex": 4, "ifname": "virbr0", "flags": ["NO-CARRIER", "BROADCAST", "MULTICAST", "UP"], "operstate": "DOWN",
+                    "scope": "global", "dynamic": True, "label": "eth1"}]},
+    {"ifindex": 4, "ifname": "br1", "flags": ["NO-CARRIER", "BROADCAST", "MULTICAST", "UP"], "operstate": "DOWN",
      "addr_info": [{"family": "inet", "local": "203.0.113.1", "prefixlen": 24, "broadcast": "203.0.113.255",
-                    "scope": "global", "label": "virbr0"}]},
+                    "scope": "global", "label": "br1"}]},
 ])
 
 

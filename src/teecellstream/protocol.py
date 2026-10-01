@@ -85,8 +85,9 @@ def fps_fraction(fps: float) -> tuple[int, int]:
     used to round, with a 0.01 band around the television rate to catch 59.94 - and 59.95 falls inside
     that band, by 0.0001. Asking for 59.95 would have silently sent 59.94, which is exactly the
     difference the rate exists to measure. A rate now only counts as the television's when it is one."""
-    if abs(fps - 60000.0 / 1001.0) < 0.001:
-        return (60000, 1001)
+    for exact in (Fraction(60000, 1001), Fraction(30000, 1001), Fraction(24000, 1001)):   # the NTSC family
+        if abs(fps - float(exact)) < 0.001:
+            return (exact.numerator, exact.denominator)
     exact = Fraction(fps).limit_denominator(1000)
     return (exact.numerator, exact.denominator)
 
@@ -169,6 +170,32 @@ VIDEO_CODECS = ("h264", "mpeg2")
 PACE_GAIN = 0.5
 PACE_MAX_STEP_S = 0.002
 PACE_PERIOD_RANGE_NS = (5_000_000, 50_000_000)   # 200 Hz .. 20 Hz: anything else is not a display
+# A lock only makes sense when the chosen rate IS the television's, or a whole fraction of it: 60 against
+# 59.94 locks to 59.94, 30 to 29.97. 50 or 55 chosen on a 59.94 set were chosen to give the console more
+# time per picture - pulling them up to 59.94 would undo exactly that (1.1.0 did), so such a report is ignored.
+PACE_MATCH_TOLERANCE = 0.02
+# A capture that ffmpeg paces itself (ddagrab, gdigrab, x11grab) cannot follow the lock picture by picture;
+# its encoder is started again at the television's rate instead. The console measures that rate on its own
+# clock (59.937 Hz on the test console for a 59.94 set), so it is snapped to the standard rate it belongs to.
+PACE_SNAP_RATES = (Fraction(60000, 1001), Fraction(60), Fraction(50), Fraction(30000, 1001), Fraction(30),
+                   Fraction(25), Fraction(24000, 1001), Fraction(24))
+PACE_SNAP_TOLERANCE = 0.001
+
+
+def display_lock(chosen_fps: float, period_s: float) -> tuple[int, Fraction] | None:
+    """(refreshes per picture, the rate to run an encoder at) when chosen_fps is the display's rate or a whole
+    fraction of it - None when the rate was chosen to differ from it (see PACE_MATCH_TOLERANCE)."""
+    if chosen_fps <= 0 or period_s <= 0:
+        return None
+    display = 1.0 / period_s
+    per_picture = max(1, round(display / chosen_fps))
+    target = display / per_picture
+    if abs(target - chosen_fps) / chosen_fps > PACE_MATCH_TOLERANCE:
+        return None
+    for rate in PACE_SNAP_RATES:
+        if abs(target - float(rate)) / float(rate) <= PACE_SNAP_TOLERANCE:
+            return per_picture, rate
+    return per_picture, Fraction(target).limit_denominator(1000)
 
 
 def parse_pace(text: str) -> tuple[float, float] | None:

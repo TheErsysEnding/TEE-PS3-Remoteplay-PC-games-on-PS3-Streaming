@@ -1153,10 +1153,15 @@ class PacingTests(unittest.TestCase):
         self.assertEqual([], [line for line in lines if line.startswith("trace: ")])
 
     def test_display_lock_runs_the_grid_at_the_consoles_refresh(self):
-        """A 60.00/s source against a 59.94 Hz television: with the lock the grid follows the TELEVISION."""
-        self.cap.set_display_clock(1001 / 60000, 0.0)
+        """A 60/s source against a slower display: with the lock the grid follows the DISPLAY.
+
+        55 Hz rather than the real 59.94 on purpose. A picture that lands inside its slot's write window goes
+        out at once, so against 59.94 the writes follow the 60/s source until its phase has walked through
+        that window (about 1 ms a second, 4 ms of window) - a 3 s sample showed 60.00 or 59.94 depending on
+        where it started. Against 55 every slot is visibly the display's and the rate is exact."""
+        self.cap.set_display_clock(1 / 55, 0.0)
         rate = self._run(60, seconds=3.0)
-        self.assertAlmostEqual(59.94, rate, delta=0.05)
+        self.assertAlmostEqual(55.0, rate, delta=0.1)
 
     def test_display_lock_nudge_moves_the_phase_once(self):
         self.cap.set_display_clock(1 / FPS, 0.004)

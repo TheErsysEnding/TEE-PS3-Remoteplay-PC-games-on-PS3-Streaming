@@ -34,9 +34,11 @@ class ScreenCapture:
     def stop(self) -> None:
         pass
 
-    def set_display_clock(self, period_s: float, nudge_s: float) -> None:
+    def set_display_clock(self, period_s: float, nudge_s: float) -> bool:
         """The console's display lock (protocol.PACE_GAIN): run the frame grid at period_s and move it by nudge_s
-        once. Only a backend that paces the pictures itself can follow it; the others ignore it."""
+        once. True when this backend follows it - only one that paces the pictures itself can. False here:
+        ffmpeg paces the others, and LiveStreamer starts their encoder again at the display's rate instead."""
+        return False
 
     def transient_failure(self, ffmpeg_error: str) -> bool:
         """True when a start that produced no frames looks like a source that was merely BUSY, so the same

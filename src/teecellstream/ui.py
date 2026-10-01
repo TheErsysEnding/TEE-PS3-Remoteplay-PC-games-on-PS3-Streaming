@@ -30,7 +30,7 @@ NARROW_BREAKPOINT = "max-width: 500sp"
 
 from .ui_text import (BITRATE_HINT, FPS_HINT, status_text, COMMANDS_INTRO, COMMAND_KINDS, COMMAND_KIND_LABELS, DISPLAY_HINTS, DISPLAY_LABELS,
                       DEBLOCK_HINTS, DEBLOCK_LABELS, DEBLOCK_UNAVAILABLE_HINT,
-                      MOTION_HINTS, MOTION_LABELS, MOTION_UNAVAILABLE_HINT, CODEC_HINTS, CODEC_LABELS,
+                      MOTION_HINTS, MOTION_LABELS, MOTION_UNAVAILABLE_HINT, CODEC_HINTS, CODEC_LABELS, nvenc_switch_hint,
                       ENTROPY_HINTS, ENTROPY_LABELS, HIDE_HINT, LANGUAGE_CODES, LANGUAGE_LABELS, 
                       LOSS_RECOVERY_HINTS, LOSS_RECOVERY_KINDS, LOSS_RECOVERY_LABELS, RATE_HINTS, 
                       RATE_LABELS, SIZE_HINT_BY_SIZE, SLICE_HINTS, SLICE_LABELS, SOURCE_BAND, 
@@ -594,21 +594,13 @@ class MainWindow(Adw.ApplicationWindow):
                 row.set_subtitle(_(hints[index]))
         # the filter switch only exists with an ffmpeg that can pass it on; with any other the row says so
         # and stays greyed out rather than offering a choice that would change nothing
-        available = bool(getattr(self._server, "nvenc_can_skip_deblocking", False))
-        self.deblock_row.set_sensitive(available)
-        index = self.deblock_row.get_selected()
-        hint = (DEBLOCK_HINTS[index] if 0 <= index < len(DEBLOCK_HINTS) else DEBLOCK_HINTS[0]) if available \
-            else DEBLOCK_UNAVAILABLE_HINT
-        if self.deblock_row.get_subtitle() != _(hint):
-            self.deblock_row.set_subtitle(_(hint))
-        # the motion switch follows the same rule, and usually comes with the same patched ffmpeg
-        available = bool(getattr(self._server, "nvenc_can_use_whole_pixels", False))
-        self.motion_row.set_sensitive(available)
-        index = self.motion_row.get_selected()
-        hint = (MOTION_HINTS[index] if 0 <= index < len(MOTION_HINTS) else MOTION_HINTS[0]) if available \
-            else MOTION_UNAVAILABLE_HINT
-        if self.motion_row.get_subtitle() != _(hint):
-            self.motion_row.set_subtitle(_(hint))
+        # (and only on a PC with an NVIDIA encoder: the bundled ffmpeg knows the options on every machine)
+        for row, able, hints, missing in ((self.deblock_row, "nvenc_can_skip_deblocking", DEBLOCK_HINTS, DEBLOCK_UNAVAILABLE_HINT),
+                                          (self.motion_row, "nvenc_can_use_whole_pixels", MOTION_HINTS, MOTION_UNAVAILABLE_HINT)):
+            available, hint = nvenc_switch_hint(self._server, able, hints, row.get_selected(), missing)
+            row.set_sensitive(available)
+            if row.get_subtitle() != _(hint):
+                row.set_subtitle(_(hint))
 
     def _on_rate_selected(self, row, _pspec) -> None:
         if self._syncing:

@@ -12,9 +12,10 @@ homebrew application `cell-stream` from ps3-dev (release 174-a5dd795). It
 captures the desktop, encodes H.264, streams it to a PlayStation 3 over UDP and
 replays the console's controller on the PC.
 
-The PS3 application itself is NOT part of this repository and is NOT modified by
-it. This server speaks the same wire protocol so that the unmodified `cell-stream`
-package works with it.
+The PS3 application is not part of this repository. Its releases ship a modified
+build of `cell-stream` (TEE Remote Play, from mohasi's Apache-2.0 sources) as a
+separate .pkg; the unmodified `cell-stream` package works with this server too,
+because both speak the same wire protocol.
 
 THIRD-PARTY MATERIAL INCLUDED HERE
 ----------------------------------
@@ -34,12 +35,21 @@ The application icons under `data/icons/` are derived from the original
 `cell-stream.ico` (mohasi, Apache-2.0); the grey/green status dots are original
 to this project.
 
+Since 1.1.1 the Linux package and the Windows installer each include an FFmpeg
+8.0.1 binary with two patches from `ffmpeg-nvenc/`, linked with x264. That binary
+is licensed under the GNU GPL, version 2 or later; it runs as a separate process
+and is not linked into this program. Its complete corresponding source is
+attached to every release (tee-ps3-remoteplay-ffmpeg-source-<version>.tar.xz).
+The Windows installer also carries the ViGEmBus driver installer (Nefarius,
+BSD-3-Clause) and the Python, Qt/PySide6 and vgamepad runtime of the server.
+
 At runtime this project drives, but does not include or link, the following:
-FFmpeg, GStreamer, xdg-desktop-portal, PipeWire, GTK4 and libadwaita, all
+GStreamer, xdg-desktop-portal, PipeWire, GTK4 and libadwaita (Linux), all
 installed from the distribution's own packages.
 
 WHAT IS ORIGINAL TO THIS PROJECT
 --------------------------------
-Everything under `src/`, `tests/`, `packaging/` and `data/` other than the
-derived icons: the Python implementation, the Linux-specific capture, input,
+Everything under `src/`, `tests/`, `packaging/`, `data/`, `ffmpeg-nvenc/`,
+`windows/` and `tools/` other than the derived icons and the third-party
+licence texts: the Python implementation, the Linux-specific capture, input,
 display and audio paths, the packaging, the test suite and the documentation.

@@ -5,7 +5,7 @@ Linux port of cell-stream-server (ps3-dev, Apache-2.0, release 174-a5dd795).
 
 # ".t" and three digits mark a build still under test (1.0.1.t001, .t002, ...); only one that passed its
 # test gets a plain number. The PS3 app follows the same scheme (ps3-src/.../include/app-version.h).
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 # The DEBIAN version carries an epoch. Development ran to 1.38.0 before the first public release was
 # cut at 1.0.0, and dpkg compares versions strictly: without the epoch apt sees 1.0.0 as older than
 # what is installed and refuses to "upgrade" to it. "1:" is exactly the mechanism Debian provides for

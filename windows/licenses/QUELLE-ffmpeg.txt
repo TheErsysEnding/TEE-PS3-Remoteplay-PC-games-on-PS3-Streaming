@@ -1,31 +1,28 @@
 ﻿Quelltext zum mitgelieferten ffmpeg.exe  /  Corresponding Source for the bundled ffmpeg.exe
 ===========================================================================================
 
-Das ffmpeg.exe in diesem Ordner ist ein unveraendertes fremdes Programm. Es steht unter der
-GNU General Public License, Version 3 (siehe LICENSE-ffmpeg.txt) und wird von "TEE PS3 Remoteplay"
-lediglich als eigener Prozess gestartet - nicht eingebunden, nicht gelinkt, nicht veraendert.
+Das ffmpeg.exe in diesem Ordner ist ffmpeg 8.0.1 mit drei kleinen Aenderungen von TEE PS3 Remoteplay
+(NVENC ohne Deblocking-Filter, NVENC auf ganzen Pixeln, Intra-Refresh fuer MPEG-2) und fest eingebautem
+x264. Es steht unter der GNU General Public License, Version 2 oder spaeter (siehe LICENSE-ffmpeg.txt),
+und wird von "TEE PS3 Remoteplay" als eigener Prozess gestartet.
 
-Version des Baus:   FFmpeg 9.0.1-essentials_build-www.gyan.dev  (64-bit, statisch, Windows)
-Herkunft:           https://www.gyan.dev/ffmpeg/builds/
-Quelltext:          https://github.com/FFmpeg/FFmpeg/commit/bf1b838f2a
-                    (dieser Commit wird in README-ffmpeg.txt vom Bauenden selbst genannt)
-Bauskripte:         https://github.com/GyanD/codexffmpeg
-Vollstaendige configure-Zeile und alle enthaltenen Bibliotheken: README-ffmpeg.txt
+Der vollstaendige zugehoerige Quelltext - das ffmpeg-Archiv, die Patches, x264, die NVENC- und
+AMF-Header und das Bauskript - haengt an jedem Release als
 
-GPL v3, Abschnitt 6 Buchstabe d: Der vollstaendige zugehoerige Quelltext ist an den oben genannten
-Orten frei zugaenglich, und zwar genau in der Fassung, aus der dieses Binaerprogramm gebaut wurde.
+    tee-ps3-remoteplay-ffmpeg-source-<Version>.tar.xz
 
-Schriftliches Angebot: Wer den Quelltext lieber auf einem Datentraeger haette, bekommt ihn gegen
-Erstattung der reinen Versandkosten. Anfragen an:
+    https://github.com/TheErsysEnding/TEE-PS3-Remoteplay-PC-games-on-PS3-Streaming/releases
 
-    github@teebug.de
+Die Patches und das Bauskript liegen ausserdem im Repository im Ordner ffmpeg-nvenc/.
+Genaue Bauparameter: README-ffmpeg.txt
 
 -------------------------------------------------------------------------------------------
 
-The ffmpeg.exe in this folder is an unmodified third-party program under the GNU General Public
-License v3 (see LICENSE-ffmpeg.txt). "TEE PS3 Remoteplay" only starts it as a separate process; it
-does not link against it and does not modify it.
+The ffmpeg.exe in this folder is ffmpeg 8.0.1 with three small changes by TEE PS3 Remoteplay (NVENC
+without the deblocking filter, NVENC on whole pixels, intra refresh for MPEG-2), statically linked with
+x264. It is licensed under the GNU General Public License, version 2 or later (see LICENSE-ffmpeg.txt),
+and "TEE PS3 Remoteplay" starts it as a separate process.
 
-The complete corresponding source for this exact build is freely available at the locations named
-above (GPL v3 section 6d). On request it is also supplied on physical media against shipping
-costs: github@teebug.de
+The complete corresponding source - the ffmpeg tarball, the patches, x264, the NVENC and AMF headers and
+the build script - is attached to every release as tee-ps3-remoteplay-ffmpeg-source-<version>.tar.xz at
+the address above; the patches and the build script are also in the repository under ffmpeg-nvenc/.

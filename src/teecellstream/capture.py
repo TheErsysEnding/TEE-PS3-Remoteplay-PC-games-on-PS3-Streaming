@@ -603,10 +603,11 @@ class _PipeCapture(ScreenCapture):
                         arrivals[int(len(arrivals) * 0.99)], 100.0 * a_on_time / len(arrivals)))
         return line
 
-    def set_display_clock(self, period_s: float, nudge_s: float) -> None:
+    def set_display_clock(self, period_s: float, nudge_s: float) -> bool:
         with self._gate:
             self._display_period = period_s
             self._display_nudge += nudge_s
+        return True
 
     def stop(self) -> None:
         with self._lifecycle:
@@ -877,7 +878,7 @@ class X11Capture(ScreenCapture):
             return False
         self.fps = fps
         self.captured_fps = fps   # nominal: ffmpeg pulls at exactly this rate, we never see the frames
-        log.write(_("capture: x11grab on %s (%d fps, scaled to %dx%d)") % (self._display, fps, width, height))
+        log.write(_("capture: x11grab on %s (%g fps, scaled to %dx%d)") % (self._display, fps, width, height))
         return True
 
     def ffmpeg_input_args(self) -> list[str]:
